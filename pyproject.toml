@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chronos-agent-inbox"
+version = "0.1.0"
+description = "Local-first email and calendar inbox for AI agents"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Chronos Contributors" }]
+keywords = ["email", "calendar", "gmail", "mcp", "agent", "inbox"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "mcp[cli]>=1.0",
+    "google-api-python-client>=2.127",
+    "google-auth-oauthlib>=1.2",
+    "google-auth-httplib2>=0.2",
+    "python-ulid>=2.0",
+    "httpx>=0.27",
+    "click>=8.1",
+    "rich>=13.0",
+    "aiofiles>=23.0",
+]
+
+[project.scripts]
+chronos = "chronos.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
