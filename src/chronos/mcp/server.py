@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 logger = logging.getLogger(__name__)
 
 
-def create_mcp_server(http_port: int = 7070) -> Any:
+def _build_mcp(http_port: int = 7070) -> FastMCP:
     """Create and configure the FastMCP server."""
     mcp = FastMCP("chronos")
     base_url = f"http://127.0.0.1:{http_port}"
@@ -335,4 +335,14 @@ def create_mcp_server(http_port: int = 7070) -> Any:
             body["params"] = params
         return await _post("/v1/query", body)
 
-    return mcp.sse_app()
+    return mcp
+
+
+def create_mcp_server(http_port: int = 7070) -> Any:
+    """Return the FastMCP ASGI SSE app for use with uvicorn (daemon mode)."""
+    return _build_mcp(http_port).sse_app()
+
+
+def get_mcp_instance(http_port: int = 7070) -> FastMCP:
+    """Return the raw FastMCP instance (for stdio or streamable-http transport)."""
+    return _build_mcp(http_port)

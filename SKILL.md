@@ -8,9 +8,14 @@ description: >
 entrypoint: chronos --start
 install: pipx install chronos-agent-inbox
 interface:
-  type: mcp
-  transport: sse
-  url: http://127.0.0.1:7071/sse
+  - type: mcp
+    transport: sse
+    url: http://127.0.0.1:7071/sse
+    note: "Connect after running: chronos --start"
+  - type: mcp
+    transport: stdio
+    command: chronos --mcp-stdio
+    note: "Self-contained subprocess mode — starts sync engine internally, no separate daemon needed"
 tools:
   - list_accounts
   - search_messages
@@ -41,13 +46,73 @@ pipx install chronos-agent-inbox
 # Register an account (opens browser for OAuth2 consent)
 chronos --add personal ~/path/to/credentials.json
 
-# Start the daemon
+# Option A: Run as a persistent daemon, connect via SSE
 chronos --start
+# → MCP at http://127.0.0.1:7071/sse
+
+# Option B: Spawn as a subprocess (agent manages the process lifetime)
+chronos --mcp-stdio
+# → MCP on stdin/stdout; sync engine runs internally
 ```
 
-## MCP Tools
+## Integration Modes
 
-Connect your agent to `http://127.0.0.1:7071/sse` (SSE transport) and use:
+### Mode 1 — Daemon + SSE (recommended for always-on use)
+
+```bash
+chronos --start        # starts HTTP API + SSE MCP + sync workers
+```
+
+Your agent connects to `http://127.0.0.1:7071/sse`. The daemon runs persistently and
+keeps the local database continuously synced in the background.
+
+Best for: persistent setups, multiple agents sharing the same inbox data.
+
+### Mode 2 — Stdio subprocess (recommended for agent-managed lifecycle)
+
+```bash
+chronos --mcp-stdio    # starts everything internally, exposes MCP on stdio
+```
+
+Your agent spawns this as a subprocess and communicates via stdin/stdout using the
+MCP protocol. The sync engine runs inside the same process — no separate daemon needed.
+The agent owns the process lifetime.
+
+Best for: agent runtimes that manage MCP server processes directly (e.g. Hermes, Claude
+Code MCP config, any MCP-compatible agent that spawns stdio servers).
+
+**Claude Code / claude_desktop_config.json:**
+```json
+{
+  "mcpServers": {
+    "chronos": {
+      "command": "chronos",
+      "args": ["--mcp-stdio"]
+    }
+  }
+}
+```
+
+**Hermes agent / MCP config:**
+```json
+{
+  "servers": {
+    "chronos": {
+      "transport": "stdio",
+      "command": "chronos --mcp-stdio"
+    }
+  }
+}
+```
+
+## Agent Usage Guidelines
+
+Before using any tool, call `get_sync_status` if the last sync was more than 10 minutes
+ago — this confirms the daemon is live and data is fresh. For time-sensitive queries
+(e.g. "what's on my calendar today"), trigger an incremental sync first with
+`trigger_sync` if `last_synced_at` is stale.
+
+## MCP Tools
 
 | Tool | Description |
 |------|-------------|

@@ -53,6 +53,7 @@ def _format_last_synced(last_synced_at: int | None) -> str:
 @click.option("--list", "list_accounts", is_flag=True, help="List all registered accounts")
 @click.option("--test", "test_alias", metavar="ALIAS", help="Test an existing account's tokens")
 @click.option("--start", "start_daemon", is_flag=True, help="Start the Chronos daemon")
+@click.option("--mcp-stdio", "mcp_stdio", is_flag=True, help="Start MCP server on stdio (agent subprocess mode)")
 @click.option("--stop", "stop_daemon", is_flag=True, help="Stop the running daemon")
 @click.option("--status", "show_status", is_flag=True, help="Show sync status")
 @click.option("--sync", "sync_alias", metavar="[ALIAS]", default=None, help="Trigger sync")
@@ -68,6 +69,7 @@ def cli(
     list_accounts,
     test_alias,
     start_daemon,
+    mcp_stdio,
     stop_daemon,
     show_status,
     sync_alias,
@@ -83,6 +85,9 @@ def cli(
         from chronos.cli.auth import run_oauth_flow
         run_oauth_flow(alias, creds_path, conn)
         conn.close()
+
+    elif mcp_stdio:
+        _cmd_mcp_stdio(http_port, db_path)
 
     elif remove_alias:
         _cmd_remove(remove_alias, db_path)
@@ -166,6 +171,52 @@ def _cmd_list(db_path: str | None) -> None:
         )
 
     console.print(table)
+
+
+def _cmd_mcp_stdio(http_port: int | None, db_path: str | None) -> None:
+    """Start MCP in stdio transport mode — full stack embedded, no external daemon needed.
+
+    This is the subprocess entry point for agents like Hermes. It starts the sync
+    engine and an internal HTTP API, then exposes the MCP interface on stdio.
+    The agent communicates via stdin/stdout using the MCP protocol.
+    """
+    import asyncio
+    _http_port = http_port or int(os.environ.get("CHRONOS_HTTP_PORT", "7072"))  # internal port
+    asyncio.run(_run_mcp_stdio(db_path, _http_port))
+
+
+async def _run_mcp_stdio(db_path: str | None, http_port: int) -> None:
+    """Run DB + sync engine + internal HTTP API + MCP stdio concurrently."""
+    import asyncio
+    import uvicorn
+    from chronos.db.connection import get_connection
+    from chronos.db.migrations import apply_migrations
+    from chronos.sync.engine import SyncEngine
+    from chronos.api.app import create_app
+    from chronos.mcp.server import get_mcp_instance
+
+    conn = get_connection(db_path)
+    apply_migrations(conn)
+    conn.close()
+
+    app = create_app(db_path)
+    sync_engine = SyncEngine(db_path)
+    mcp = get_mcp_instance(http_port)
+
+    http_config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=http_port,
+        log_level="error",   # keep stdio clean — only MCP protocol on stdout
+        access_log=False,
+    )
+    http_server = uvicorn.Server(http_config)
+
+    await asyncio.gather(
+        http_server.serve(),
+        sync_engine.run(),
+        mcp.run_stdio_async(),
+    )
 
 
 def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None) -> None:
