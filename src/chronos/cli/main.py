@@ -10,12 +10,35 @@ import sys
 import time
 from pathlib import Path
 
+import logging
+
 import click
+from rich import box
 from rich.console import Console
 from rich.live import Live
+from rich.panel import Panel
 from rich.table import Table
 
 console = Console()
+
+_BRAILLE = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_SUBTITLE = "[dim]Ctrl+C wipes data  ·  [bold]chronos --stop[/bold] for clean shutdown[/dim]"
+
+
+def _state_cell(state: str | None, tick: int) -> str:
+    if state in ("running", "syncing", "full_sync", "incremental_sync"):
+        return f"[cyan]{_BRAILLE[tick % len(_BRAILLE)]}[/cyan] sync"
+    if state == "error":
+        return "[red]✗[/red] error"
+    return "[green]✓[/green] idle"
+
+
+def _setup_logging_for_live() -> None:
+    """Silence all uvicorn loggers so they don't corrupt the Rich Live region."""
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.asgi", "uvicorn.config"):
+        log = logging.getLogger(name)
+        log.setLevel(logging.CRITICAL)
+        log.propagate = False
 
 
 def _get_chronos_home() -> Path:
@@ -67,6 +90,41 @@ Use 'chronos --stop' from another terminal for a clean shutdown that preserves d
 """
 
 
+def _show_welcome() -> None:
+    """Print a styled first-run welcome panel with setup steps."""
+    from rich.text import Text
+
+    steps = Text()
+    steps.append("\n")
+    steps.append("Step 1 — Create a Google Cloud project\n", style="bold")
+    steps.append("  https://console.cloud.google.com/projectcreate\n\n", style="cyan")
+    steps.append("Step 2 — Enable APIs\n", style="bold")
+    steps.append("  APIs & Services → Library\n", style="dim")
+    steps.append("  Enable:  Gmail API  ·  Google Calendar API\n\n")
+    steps.append("Step 3 — OAuth consent screen\n", style="bold")
+    steps.append("  External → fill in app name → add your Google account as a Test User\n\n", style="dim")
+    steps.append("Step 4 — Create credentials\n", style="bold")
+    steps.append("  Credentials → Create Credentials → OAuth client ID\n", style="dim")
+    steps.append("  Application type: ", style="dim")
+    steps.append("Desktop app", style="bold yellow")
+    steps.append("  → Download the JSON file\n\n")
+    steps.append("Step 5 — Stage the credentials file\n", style="bold")
+    steps.append("  $ chronos --use /path/to/credentials.json\n\n", style="green")
+    steps.append("Step 6 — Add your account (opens browser)\n", style="bold")
+    steps.append("  $ chronos --add personal\n\n", style="green")
+    steps.append("Step 7 — Start the daemon\n", style="bold")
+    steps.append("  $ chronos --start\n", style="green")
+
+    console.print(Panel(
+        steps,
+        title="[bold green]Welcome to Chronos[/bold green]",
+        subtitle="[dim]Run [bold]chronos --help[/bold] to see all options[/dim]",
+        border_style="green",
+        box=box.ROUNDED,
+        padding=(0, 2),
+    ))
+
+
 def _get_conn(db_path: str | None = None):
     from chronos.db.connection import get_connection
     from chronos.db.migrations import apply_migrations
@@ -90,18 +148,14 @@ def _format_last_synced(last_synced_at: int | None) -> str:
     return f"{hours} hours ago"
 
 
-def _progress_snapshot(sync_engine, db_path: str | None) -> Table:
-    """Build a Rich Table snapshot of the current sync state for all accounts.
-
-    Returns a Table with columns ALIAS, PROVIDER, STATE, SYNCED (right-justified).
-    For gmail accounts, SYNCED is COUNT(*) FROM messages; for others, from events.
-    """
+def _progress_snapshot(sync_engine, db_path: str | None, tick: int = 0) -> Table:
+    """Build a Rich Table snapshot of the current sync state for all accounts."""
     from chronos.db.connection import get_connection
 
-    table = Table(title="Chronos — syncing", show_header=True, header_style="bold")
-    table.add_column("ALIAS")
-    table.add_column("PROVIDER")
-    table.add_column("STATE")
+    table = Table(show_header=True, header_style="bold dim", box=box.SIMPLE, padding=(0, 1))
+    table.add_column("ALIAS", style="bold")
+    table.add_column("PROVIDER", style="dim")
+    table.add_column("STATE", min_width=10)
     table.add_column("SYNCED", justify="right")
 
     conn = get_connection(db_path)
@@ -110,14 +164,18 @@ def _progress_snapshot(sync_engine, db_path: str | None) -> Table:
             "SELECT id, display_name, provider FROM accounts ORDER BY display_name, provider"
         ):
             state = sync_engine.get_worker_state(row["id"])
-            if state is None:
-                state = "idle"
             count_table = "messages" if row["provider"] == "gmail" else "events"
             count = conn.execute(
                 f"SELECT COUNT(*) FROM {count_table} WHERE account_id = ?",
                 (row["id"],),
             ).fetchone()[0]
-            table.add_row(row["display_name"] or "?", row["provider"], state, f"{count:,}")
+            suffix = "msg" if row["provider"] == "gmail" else "evt"
+            table.add_row(
+                row["display_name"] or "?",
+                row["provider"],
+                _state_cell(state, tick),
+                f"{count:,} {suffix}",
+            )
     finally:
         conn.close()
 
@@ -127,16 +185,56 @@ def _progress_snapshot(sync_engine, db_path: str | None) -> Table:
 async def _live_progress(
     sync_engine, db_path: str | None, stop_event: asyncio.Event
 ) -> None:
-    """Async coroutine that refreshes a Rich Live table every 250ms.
+    """Spinner → status table transition, rendered in-place via Rich Live."""
+    from chronos.db.connection import get_connection
 
-    Runs as the 4th coroutine inside asyncio.gather in _run_daemon.
-    Exits when stop_event is set or when KeyboardInterrupt cancels the gather.
-    """
-    with Live(_progress_snapshot(sync_engine, db_path), console=console,
-              refresh_per_second=4) as live:
+    def _account_rows() -> list[tuple[str, str, str]]:
+        conn = get_connection(db_path)
+        try:
+            return [
+                (r["id"], r["display_name"] or "?", r["provider"])
+                for r in conn.execute(
+                    "SELECT id, display_name, provider FROM accounts ORDER BY display_name, provider"
+                )
+            ]
+        finally:
+            conn.close()
+
+    def _any_active(rows: list) -> bool:
+        return any(
+            sync_engine.get_worker_state(r_id) not in (None, "idle")
+            for r_id, *_ in rows
+        )
+
+    def _startup_panel(rows: list, tick: int) -> Panel:
+        ch = _BRAILLE[tick % len(_BRAILLE)]
+        lines = "\n".join(
+            f"  [cyan]{ch}[/cyan]  [bold]{alias:<12}[/bold] [dim]{provider}[/dim]  connecting…"
+            for _, alias, provider in rows
+        )
+        return Panel(lines, title="[bold]Starting Chronos[/bold]",
+                     subtitle=_SUBTITLE, border_style="dim", box=box.ROUNDED)
+
+    def _sync_panel(tick: int) -> Panel:
+        return Panel(
+            _progress_snapshot(sync_engine, db_path, tick),
+            title="[bold green]Chronos[/bold green]",
+            subtitle=_SUBTITLE,
+            border_style="green",
+            box=box.ROUNDED,
+        )
+
+    rows = _account_rows()
+    tick = 0
+
+    with Live(console=console, refresh_per_second=4) as live:
         while not stop_event.is_set():
+            if _any_active(rows):
+                live.update(_sync_panel(tick))
+            else:
+                live.update(_startup_panel(rows, tick))
+            tick += 1
             await asyncio.sleep(0.25)
-            live.update(_progress_snapshot(sync_engine, db_path))
 
 
 def _wipe_synced_data(db_path: str | None) -> None:
@@ -274,7 +372,17 @@ def cli(
         _cmd_sync(sync_alias if sync_alias else None, sync_type, db_path)
 
     else:
-        click.echo(ctx.get_help())
+        # First-run: no accounts configured → show guided setup panel
+        try:
+            conn = _get_conn(db_path)
+            has_accounts = conn.execute("SELECT 1 FROM accounts LIMIT 1").fetchone() is not None
+            conn.close()
+        except Exception:
+            has_accounts = False
+        if not has_accounts:
+            _show_welcome()
+        else:
+            click.echo(ctx.get_help())
 
 
 def _cmd_remove(alias: str, db_path: str | None) -> None:
@@ -434,6 +542,9 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
     # Create sync engine
     sync_engine = SyncEngine(db_path)
 
+    # Silence uvicorn loggers before they emit anything to stdout
+    _setup_logging_for_live()
+
     # stop_event used by _live_progress to exit on orderly shutdown
     stop_event = asyncio.Event()
 
@@ -442,7 +553,7 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
         app,
         host="127.0.0.1",
         port=http_port,
-        log_level=os.environ.get("CHRONOS_LOG_LEVEL", "info").lower(),
+        log_level="critical",
         access_log=False,
         log_config=None,
     )
@@ -453,7 +564,7 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
         mcp_app,
         host="127.0.0.1",
         port=mcp_port,
-        log_level=os.environ.get("CHRONOS_LOG_LEVEL", "info").lower(),
+        log_level="critical",
         access_log=False,
         log_config=None,
     )
