@@ -374,6 +374,7 @@ def _cmd_add(alias: str, db_path: str | None) -> None:
 @click.option("--list", "list_accounts", is_flag=True, help="List all registered accounts")
 @click.option("--test", "test_alias", metavar="ALIAS", help="Test an existing account's tokens")
 @click.option("--start", "start_daemon", is_flag=True, help="Start the Chronos daemon")
+@click.option("--walkthrough", "show_walkthrough", is_flag=True, help="Print step-by-step Google Cloud + Chronos setup guide")
 @click.option("--mcp", "install_mcp", is_flag=True, help="Add Chronos to an .mcp.json file (prompts for project or global scope)")
 @click.option("--mcp-stdio", "mcp_stdio", is_flag=True, help="Start MCP server on stdio — embedded stack, no daemon needed (use in .mcp.json)")
 @click.option("--stop", "stop_daemon", is_flag=True, help="Stop the running daemon")
@@ -391,6 +392,7 @@ def cli(
     list_accounts,
     test_alias,
     start_daemon,
+    show_walkthrough,
     install_mcp,
     mcp_stdio,
     stop_daemon,
@@ -414,6 +416,9 @@ def cli(
     if add_alias:
         _cmd_add(add_alias, db_path)
         return
+
+    elif show_walkthrough:
+        _cmd_walkthrough()
 
     elif install_mcp:
         _cmd_mcp_install()
@@ -513,6 +518,142 @@ def _cmd_list(db_path: str | None) -> None:
         )
 
     console.print(table)
+
+
+_WALKTHROUGH_MD = """\
+# Chronos Setup Walkthrough
+
+## Part 1 — Google Cloud Console
+
+### Create a project
+
+1. Visit https://console.cloud.google.com and sign in with your preferred Google account.
+2. Click the project selector (the box next to the "Google Cloud" logo) → **New Project**.
+3. Give it a name (e.g. "Chronos MCP") and click **Create**.
+4. After creation, click the project selector again and select your new project.
+
+### Enable APIs
+
+5. Open the hamburger menu (☰) → **APIs & Services**.
+6. Click **Enable APIs and services**.
+7. Search for **Google Calendar API** → select it → click **Enable**.
+8. Press the back arrow (←) to return to the library.
+9. Search for **Gmail API** → select it → click **Enable**.
+
+### Configure the OAuth consent screen
+
+10. Open the sidebar → **APIs & Services** → **Credentials**.
+11. Click **Configure consent screen** → **Get started**.
+12. Enter an app name (e.g. "Chronos MCP") and choose your email under **User support email** → **Next**.
+13. Select **External** → **Next**.
+14. Enter a contact email address → **Next**.
+15. Tick **I agree to the Google API Services: User Data Policy** → **Continue** → **Create**.
+16. On the redirect screen, click **Create OAuth client**.
+
+### Create OAuth credentials
+
+17. From the **Application type** dropdown select **Web application**.
+18. Under **Authorized redirect URIs** click **Add URI** and enter:
+
+    ```
+    http://localhost:9004/callback
+    ```
+
+19. Click **Create**.
+20. In the **OAuth client created** modal, click **Download JSON**. Rename the file to something easy like `chronos_creds.json`.
+21. Click **OK** to close the modal.
+
+### Add API scopes
+
+22. From the sidebar select **Data Access** → **Add or remove scopes**.
+23. In the search field enter: `https://www.googleapis.com/auth/calendar` → select the item that appears.
+24. Clear the field and enter: `https://mail.google.com` → select the item that appears.
+25. Click **Update** → **Save**.
+
+### Add test users
+
+26. From the sidebar select **Audience** → **Add users** (under Test users).
+27. Enter the email address(es) of the Google account(s) you want to connect.
+28. Click **Save**.
+
+---
+
+## Part 2 — Terminal Setup
+
+### Stage credentials and add accounts
+
+```zsh
+# Stage the credentials file you downloaded in step 20
+chronos --use ~/Downloads/chronos_creds.json
+
+# Add an account (opens browser for OAuth consent)
+# The alias must correspond to one of the accounts you added in step 27
+chronos --add personal
+
+# Repeat --add for any additional accounts
+chronos --add work
+```
+
+When prompted by Google, if you see **"Google hasn't verified this app"** click **Continue**.
+Click **Select all** → **Continue** to grant all required scopes.
+
+### Start syncing
+
+```zsh
+chronos --start
+```
+
+Chronos will download all your emails and calendar events into a local SQLite database.
+Your AI agents query this database — no live Google API calls at read time.
+
+### Add the MCP server to Claude Code
+
+In a second terminal:
+
+```zsh
+chronos --mcp
+```
+
+This writes the `chronos --mcp-stdio` entry into your `.mcp.json` file and adds
+instructions to `~/.claude/CLAUDE.md` so Claude uses Chronos for email/calendar queries.
+
+### Test it
+
+```zsh
+# Quick test
+claude "What's the most recent email I received?"
+
+# With full tool output
+claude --dangerously-skip-permissions --verbose "What's the most recent email I received?"
+```
+
+---
+
+> **Ctrl+C vs --stop:** Pressing Ctrl+C while `chronos --start` is running wipes synced
+> data (emails, events) but preserves accounts. Use `chronos --stop` for a clean shutdown.
+>
+> Run `chronos --walkthrough` at any time to reprint this guide.
+"""
+
+
+def _cmd_walkthrough() -> None:
+    """Print the full setup walkthrough and save WALKTHROUGH.md to ~/.chronos/."""
+    from rich.markdown import Markdown
+    from rich.rule import Rule
+
+    console.print()
+    console.print(Rule("[bold green]Chronos Setup Walkthrough[/bold green]", style="green"))
+    console.print()
+    console.print(Markdown(_WALKTHROUGH_MD))
+    console.print()
+    console.print(Rule(style="dim"))
+
+    # Write WALKTHROUGH.md to ~/.chronos/ for future reference
+    dest = _get_chronos_home() / "WALKTHROUGH.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(_WALKTHROUGH_MD)
+    console.print(f"[dim]Saved to {dest}[/dim]")
+    console.print()
 
 
 def _cmd_mcp_install() -> None:

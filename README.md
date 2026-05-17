@@ -9,8 +9,8 @@ into a single queryable SQLite database and exposes all data through an MCP serv
 ## Features
 
 - Sync multiple Gmail and Google Calendar accounts into one SQLite database
-- Full-text search via FTS5 (messages and events)
-- MCP server at `localhost:7071/sse` for agent integration
+- Full-text search via FTS5 with BM25 relevance ranking (messages, events, attachment names)
+- MCP server via `chronos --mcp-stdio` (stdio transport, no port required)
 - HTTP REST API at `localhost:7070` for direct queries
 - Read-only SQL interface via `POST /v1/query`
 - Optimistic event writes with provider-wins conflict resolution
@@ -33,59 +33,63 @@ pip install -e .
 
 ## Setup
 
-### Prerequisites
-
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a project
-2. Enable **Gmail API** and **Google Calendar API**
-3. **OAuth consent screen** → External:
-   - Add yourself as a **Test User** and keep the app in **Testing** mode
-     (Production requires CASA verification for the Gmail scope)
-   - Under "Add or remove scopes" → filter `restricted` → tick `https://mail.google.com/`
-   - Also add `https://www.googleapis.com/auth/calendar`
-4. **Credentials → Create Credentials → OAuth client ID**:
-   - Application type: **Web application**
-   - Authorized redirect URI: `http://localhost:9004/callback`
-     (override via `oauth.callback_port` in `config.yml` if needed)
-5. Download the credentials JSON file
-
-> Desktop App credentials (`"installed"` JSON shape) are **not supported** —
-> Chronos uses the `https://mail.google.com/` restricted scope, which is only
-> practical on a Web Application OAuth client in Testing mode.
-
-### Register an account
-
-> Run `chronos --help` for full Google Cloud Console setup instructions.
+Run the interactive walkthrough for detailed step-by-step instructions:
 
 ```bash
-# Step 1: Stage your credentials (Web Application OAuth JSON from Google Cloud Console)
-chronos --use /path/to/credentials.json
-
-# Step 2: Register an account (opens browser for OAuth2 consent)
-chronos --add personal
+chronos --walkthrough
 ```
 
-Staged credentials persist until the next `--use` call, so you can register
-multiple accounts with one credentials file:
+This prints the full guide in the terminal and saves it to `~/.chronos/WALKTHROUGH.md` for future reference.
+
+### Quick start
+
+**1. Google Cloud Console**
+
+- Create a project at [console.cloud.google.com](https://console.cloud.google.com)
+- Enable **Gmail API** and **Google Calendar API**
+- Configure OAuth consent screen (External, Testing mode) — add your Google account as a Test User
+- Add scopes: `https://mail.google.com/` and `https://www.googleapis.com/auth/calendar`
+- Create an OAuth client ID — **Application type: Web application**
+- Add authorized redirect URI: `http://localhost:9004/callback`
+- Download the credentials JSON
+
+> Desktop App credentials (`"installed"` JSON shape) are **not supported** —
+> Chronos uses the `https://mail.google.com/` restricted scope, which requires
+> a Web Application OAuth client in Testing mode.
+
+**2. Register accounts**
 
 ```bash
+# Stage your credentials file
 chronos --use /path/to/credentials.json
+
+# Add accounts (opens browser for OAuth consent)
 chronos --add personal
 chronos --add work
 ```
 
-The `--add` step:
-
-- Writes `~/.chronos/personal_token.json` (self-contained token file)
-- Creates two rows in the accounts table (gmail + google_calendar)
-- Prints a confirmation summary
-
-### Start syncing
+**3. Start syncing**
 
 ```bash
 chronos --start
 ```
 
-The daemon starts on `127.0.0.1:7070` (HTTP) and `127.0.0.1:7071` (MCP/SSE).
+Chronos downloads all your emails and calendar events into a local SQLite database.
+Your AI agents query this database — no live Google API calls at read time.
+
+**4. Add the MCP server**
+
+```bash
+chronos --mcp
+```
+
+Writes the stdio entry into `.mcp.json` and appends instructions to `~/.claude/CLAUDE.md`.
+
+**5. Test it**
+
+```bash
+claude "What's the most recent email I received?"
+```
 
 ## CLI Reference
 
@@ -95,17 +99,18 @@ chronos --add ALIAS                     # Register a new account (requires prior
 chronos --remove ALIAS                  # Remove an account and its data
 chronos --list                          # List all registered accounts
 chronos --test ALIAS                    # Test account tokens
-chronos --start [--http-port N] [--mcp-port N]  # Start daemon
+chronos --start [--http-port N]         # Start daemon (HTTP API + background sync)
 chronos --stop                          # Stop the running daemon (preserves synced data)
 chronos --status                        # Show sync status
 chronos --sync [ALIAS] [--type full|incremental]  # Trigger sync
+chronos --mcp                           # Add Chronos to .mcp.json (prompts for scope)
+chronos --mcp-stdio                     # Start embedded MCP server on stdio
+chronos --walkthrough                   # Print full setup guide
 ```
 
 > **Ctrl+C vs --stop:** Pressing Ctrl+C while `chronos --start` is running wipes
 > synced data (emails, threads, events, calendars) but preserves accounts.
 > Use `chronos --stop` from another terminal for a clean shutdown that preserves data.
->
-> Run `chronos --help` for Google Cloud Console setup steps.
 
 ## Environment Variables
 
@@ -114,13 +119,12 @@ chronos --sync [ALIAS] [--type full|incremental]  # Trigger sync
 | `CHRONOS_HOME`      | `~/.chronos`               | Credentials and database directory |
 | `CHRONOS_DB_PATH`   | `$CHRONOS_HOME/chronos.db` | SQLite database file               |
 | `CHRONOS_HTTP_PORT` | `7070`                     | HTTP API port                      |
-| `CHRONOS_MCP_PORT`  | `7071`                     | MCP server port                    |
 | `CHRONOS_LOG_LEVEL` | `INFO`                     | Log level                          |
 
 ## Configuration
 
-`config.yml` (searched in `$CHRONOS_CONFIG`, `./config.yml`, then `~/.chronos/config.yml`)
-exposes additional settings. The OAuth callback is one of them:
+`config.yml` is auto-created at `~/.chronos/config.yml` on first run. The OAuth
+callback port is the most commonly customized setting:
 
 ```yaml
 settings:
@@ -129,8 +133,7 @@ settings:
     callback_path: /callback # appended to the redirect URI
 ```
 
-If you change `callback_port`, update the **Authorized redirect URI** in your
-Web Application OAuth client to match.
+If you change `callback_port`, update the **Authorized redirect URI** in Google Cloud Console to match.
 
 ## License
 
