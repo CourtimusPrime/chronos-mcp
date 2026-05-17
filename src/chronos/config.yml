@@ -35,7 +35,7 @@ settings:
   # Sync — pacing and parallelism for the background workers.
   sync:
     poll_interval_seconds: 30  # how often the orchestrator checks for new accounts
-    incremental_interval_seconds: 60  # delay between incremental syncs per worker
+    incremental_interval_seconds: 300  # delay between incremental syncs per worker (5 min)
 
     gmail:
       concurrence: 10          # in-flight messages.get requests per account.

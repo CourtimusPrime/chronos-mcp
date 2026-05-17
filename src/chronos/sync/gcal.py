@@ -700,7 +700,8 @@ class CalendarWorker:
         self._running = True
         # Signal to the live display that the worker is up (see gmail.run() comment)
         self._current_sync_state = "ready"
-        polling_interval = 60
+        from chronos.config import get as _cfg
+        polling_interval = float(_cfg("sync.incremental_interval_seconds", 300))
 
         conn = self._get_conn()
         row = conn.execute(
