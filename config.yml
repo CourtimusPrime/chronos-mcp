@@ -67,3 +67,12 @@ settings:
     base_seconds: 2.0          # first retry waits this long
     max_seconds: 64.0          # cap on exponential backoff
     jitter_pct: 20             # ±% randomization to avoid thundering herd
+
+  # OAuth — local HTTP callback used by the Web App OAuth flow.
+  # IMPORTANT: the URL http://localhost:<callback_port><callback_path> MUST
+  # appear in the "Authorized redirect URIs" list of your Web Application
+  # OAuth 2.0 Client ID in Google Cloud Console, or chronos --use will reject
+  # the JSON. Default 9004 matches the redirect URI shown in chronos --help.
+  oauth:
+    callback_port: 9004        # local port the OAuth callback HTTP server binds
+    callback_path: /callback   # path component of the redirect URI

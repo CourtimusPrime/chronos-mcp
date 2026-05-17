@@ -43,6 +43,10 @@ _DEFAULTS: dict[str, Any] = {
         "progress_refresh_hz": 4,
     },
     "rate_limit": {"base_seconds": 2.0, "max_seconds": 64.0, "jitter_pct": 20},
+    "oauth": {
+        "callback_port": 9004,
+        "callback_path": "/callback",
+    },
 }
 
 
