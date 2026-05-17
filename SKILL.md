@@ -43,8 +43,16 @@ through a Model Context Protocol (MCP) server on localhost.
 # Install
 pipx install chronos-agent-inbox
 
-# Register an account (opens browser for OAuth2 consent)
-chronos --add personal ~/path/to/credentials.json
+# Step 1: Stage your Google Cloud credentials (Desktop app OAuth JSON)
+# Run 'chronos --help' for full Google Cloud Console setup instructions.
+chronos --use /path/to/credentials.json
+
+# Step 2: Register an account (opens browser for OAuth2 consent)
+chronos --add personal
+
+# Staged credentials persist until the next '--use' call (Policy B).
+# Register multiple aliases with the same credentials file:
+#   chronos --add work
 
 # Option A: Run as a persistent daemon, connect via SSE
 chronos --start
@@ -54,6 +62,10 @@ chronos --start
 chronos --mcp-stdio
 # → MCP on stdin/stdout; sync engine runs internally
 ```
+
+> **Note:** Pressing Ctrl+C while `chronos --start` is running wipes synced data
+> (emails, threads, events, calendars) but preserves accounts. Use `chronos --stop`
+> from another terminal for a clean shutdown that preserves all synced data.
 
 ## Integration Modes
 

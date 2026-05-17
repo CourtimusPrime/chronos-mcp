@@ -42,11 +42,26 @@ pip install -e .
 
 ### Register an account
 
+> Run `chronos --help` for full Google Cloud Console setup instructions.
+
 ```bash
-chronos --add personal ~/path/to/client_secret.json
+# Step 1: Stage your credentials (Desktop app OAuth JSON from Google Cloud Console)
+chronos --use /path/to/credentials.json
+
+# Step 2: Register an account (opens browser for OAuth2 consent)
+chronos --add personal
 ```
 
-This opens your browser for Google OAuth2 consent, then:
+Staged credentials persist until the next `--use` call, so you can register
+multiple accounts with one credentials file:
+
+```bash
+chronos --use /path/to/credentials.json
+chronos --add personal
+chronos --add work
+```
+
+The `--add` step:
 - Writes `~/.chronos/personal_token.json` (self-contained token file)
 - Creates two rows in the accounts table (gmail + google_calendar)
 - Prints a confirmation summary
@@ -62,15 +77,22 @@ The daemon starts on `127.0.0.1:7070` (HTTP) and `127.0.0.1:7071` (MCP/SSE).
 ## CLI Reference
 
 ```
-chronos --add ALIAS CREDENTIALS_PATH    # Register a new account
+chronos --use CREDENTIALS_PATH          # Stage a credentials JSON for --add
+chronos --add ALIAS                     # Register a new account (requires prior --use)
 chronos --remove ALIAS                  # Remove an account and its data
 chronos --list                          # List all registered accounts
 chronos --test ALIAS                    # Test account tokens
 chronos --start [--http-port N] [--mcp-port N]  # Start daemon
-chronos --stop                          # Stop the running daemon
+chronos --stop                          # Stop the running daemon (preserves synced data)
 chronos --status                        # Show sync status
 chronos --sync [ALIAS] [--type full|incremental]  # Trigger sync
 ```
+
+> **Ctrl+C vs --stop:** Pressing Ctrl+C while `chronos --start` is running wipes
+> synced data (emails, threads, events, calendars) but preserves accounts.
+> Use `chronos --stop` from another terminal for a clean shutdown that preserves data.
+>
+> Run `chronos --help` for Google Cloud Console setup steps.
 
 ## Environment Variables
 
