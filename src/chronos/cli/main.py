@@ -1,9 +1,10 @@
-"""Click CLI: --add, --remove, --list, --test, --start, --stop, --status, --sync."""
+"""Click CLI: --use, --add, --remove, --list, --test, --start, --stop, --status, --sync."""
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -24,6 +25,46 @@ def _get_chronos_home() -> Path:
 
 def _get_pid_file() -> Path:
     return _get_chronos_home() / "chronos.pid"
+
+
+# ---------------------------------------------------------------------------
+# Credential staging constants and helpers
+# ---------------------------------------------------------------------------
+
+PENDING_CREDS_FILENAME = "pending_credentials.json"
+
+
+def _pending_creds_path() -> Path:
+    return _get_chronos_home() / PENDING_CREDS_FILENAME
+
+
+_ALIAS_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _validate_alias(alias: str) -> None:
+    if not _ALIAS_PATTERN.match(alias):
+        raise SystemExit(
+            f"Error: invalid alias '{alias}'. Alias must match [A-Za-z0-9_-]{{1,64}}."
+        )
+
+
+GOOGLE_SETUP = """
+\b
+Google Cloud Console Setup
+==========================
+1. Visit https://console.cloud.google.com/projectcreate and create a project.
+2. APIs & Services → Library: enable "Gmail API" and "Google Calendar API".
+3. APIs & Services → OAuth consent screen → External, fill in app name and your
+   email; add your Google account as a Test User.
+4. APIs & Services → Credentials → Create Credentials → OAuth client ID.
+   Application type: Desktop app. Download the JSON file.
+5. chronos --use /path/to/downloaded.json
+6. chronos --add <alias>     (opens browser for consent)
+7. chronos --start           (runs daemon + sync)
+
+Tip: Ctrl+C while --start is running wipes synced data but keeps accounts.
+Use 'chronos --stop' from another terminal for a clean shutdown that preserves data.
+"""
 
 
 def _get_conn(db_path: str | None = None):
@@ -118,8 +159,54 @@ def _wipe_synced_data(db_path: str | None) -> None:
         conn.close()
 
 
-@click.group(invoke_without_command=True)
-@click.option("--add", "add_alias", nargs=2, metavar="ALIAS CREDENTIALS_PATH", help="Register a new account")
+def _cmd_use(creds_path: str) -> None:
+    """Stage a credentials JSON file for use with --add."""
+    src = Path(creds_path)
+
+    try:
+        data = json.loads(src.read_text())
+    except (json.JSONDecodeError, ValueError):
+        raise SystemExit("Error: could not parse credentials file")
+
+    if "web" in data:
+        raise SystemExit('Error: credentials file must use application type "Desktop app"')
+
+    if "installed" not in data:
+        raise SystemExit("Error: could not parse credentials file")
+
+    dest = _pending_creds_path()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(src.read_text())
+    dest.chmod(0o600)
+
+    console.print(f"[green]✓ Credentials staged at {dest}[/green]")
+    console.print("Next: chronos --add <alias>")
+
+
+def _cmd_add(alias: str, db_path: str | None) -> None:
+    """Register a new account using staged credentials."""
+    _validate_alias(alias)
+
+    creds = _pending_creds_path()
+    if not creds.exists():
+        raise SystemExit(
+            "Error: no staged credentials.\n"
+            "Run 'chronos --use /path/to/credentials.json' first, "
+            "then 'chronos --add <alias>'."
+        )
+
+    conn = _get_conn(db_path)
+    try:
+        from chronos.cli.auth import run_oauth_flow
+        run_oauth_flow(alias, str(creds), conn)
+    finally:
+        conn.close()
+    # Policy B: do NOT delete staged credentials — operator can run --add multiple times
+
+
+@click.group(invoke_without_command=True, epilog=GOOGLE_SETUP)
+@click.option("--use", "use_creds", metavar="CREDENTIALS_PATH", type=click.Path(exists=True, dir_okay=False), help="Stage a credentials JSON for the next --add")
+@click.option("--add", "add_alias", metavar="ALIAS", help="Register a new account (requires prior --use)")
 @click.option("--remove", "remove_alias", metavar="ALIAS", help="Remove a registered account")
 @click.option("--list", "list_accounts", is_flag=True, help="List all registered accounts")
 @click.option("--test", "test_alias", metavar="ALIAS", help="Test an existing account's tokens")
@@ -135,6 +222,7 @@ def _wipe_synced_data(db_path: str | None) -> None:
 @click.pass_context
 def cli(
     ctx,
+    use_creds,
     add_alias,
     remove_alias,
     list_accounts,
@@ -150,12 +238,13 @@ def cli(
     sync_type,
 ):
     """Chronos — agent-inbox: local-first email and calendar sync daemon."""
+    if use_creds:
+        _cmd_use(use_creds)
+        return
+
     if add_alias:
-        alias, creds_path = add_alias
-        conn = _get_conn(db_path)
-        from chronos.cli.auth import run_oauth_flow
-        run_oauth_flow(alias, creds_path, conn)
-        conn.close()
+        _cmd_add(add_alias, db_path)
+        return
 
     elif mcp_stdio:
         _cmd_mcp_stdio(http_port, db_path)
