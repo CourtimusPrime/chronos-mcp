@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chronos — Agent Inbox</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f3558;
+      --green: #3fb950;
+      --code-bg: #1c2128;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 10;
+    }
+    .nav-logo { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+    .nav-links { display: flex; gap: 1.5rem; font-size: 0.9rem; }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    /* ── Hero ── */
+    .hero {
+      max-width: 860px;
+      margin: 6rem auto 4rem;
+      padding: 0 2rem;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      padding: 0.25rem 0.85rem;
+      font-size: 0.8rem;
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.04em;
+    }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+    }
+    h1 span { color: var(--accent); }
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 620px;
+      margin: 0 auto 2.5rem;
+    }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-block;
+      padding: 0.65rem 1.5rem;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+    /* ── Quick install ── */
+    .install-bar {
+      max-width: 560px;
+      margin: 3rem auto 0;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .install-bar code {
+      flex: 1;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 0.9rem;
+      color: var(--green);
+    }
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+      cursor: pointer;
+    }
+    .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── Features ── */
+    .section { max-width: 1040px; margin: 0 auto 6rem; padding: 0 2rem; }
+    .section-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 0.6rem;
+    }
+    .section-title { font-size: 1.85rem; font-weight: 700; margin-bottom: 0.75rem; }
+    .section-sub { color: var(--muted); max-width: 580px; margin-bottom: 2.5rem; }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem;
+    }
+    .feature-icon { font-size: 1.5rem; margin-bottom: 0.75rem; }
+    .feature-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .feature-card p { font-size: 0.875rem; color: var(--muted); }
+
+    /* ── How it works ── */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+      counter-reset: step;
+    }
+    .step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem;
+      counter-increment: step;
+      position: relative;
+    }
+    .step::before {
+      content: counter(step);
+      position: absolute;
+      top: 1.1rem; right: 1.2rem;
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--border);
+      line-height: 1;
+    }
+    .step h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .step p { font-size: 0.85rem; color: var(--muted); }
+
+    /* ── MCP config snippet ── */
+    .snippet-wrap {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .snippet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .snippet-header .dots { display: flex; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+    pre {
+      padding: 1.25rem;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+    .kw { color: #79c0ff; }
+    .str { color: #a5d6ff; }
+    .val { color: var(--green); }
+    .cm { color: var(--muted); font-style: italic; }
+
+    /* ── CLI table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    th {
+      text-align: left;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    td {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    td code, th code {
+      font-family: "SF Mono", "Fira Code", monospace;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.4em;
+      font-size: 0.85em;
+    }
+    td:first-child { color: var(--accent); }
+    td:first-child code { color: var(--accent); }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-logo">⏱ Chronos</span>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#quickstart">Quickstart</a>
+    <a href="#mcp">MCP</a>
+    <a href="#cli">CLI</a>
+    <a href="https://github.com/CourtimusPrime/chronos">GitHub</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="badge">Local-first · MCP · SQLite</div>
+  <h1>Agent inbox for<br><span>Gmail &amp; Calendar</span></h1>
+  <p>
+    Chronos syncs multiple Google accounts into a single queryable SQLite database
+    and exposes everything through an MCP server — so your AI agents can read,
+    search, and act on email and calendar data without cloud round-trips.
+  </p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="#quickstart">Get started</a>
+    <a class="btn btn-secondary" href="https://github.com/CourtimusPrime/chronos">View on GitHub</a>
+  </div>
+  <div class="install-bar">
+    <code>pipx install chronos-agent-inbox</code>
+    <button class="copy-btn" onclick="copyInstall(this)">Copy</button>
+  </div>
+</section>
+
+<!-- ── Features ── -->
+<section class="section" id="features">
+  <div class="section-label">Features</div>
+  <h2 class="section-title">Everything agents need, nothing they don't</h2>
+  <p class="section-sub">
+    Chronos stays on your machine. No cloud proxy, no external service — just a
+    fast local database your agents query directly.
+  </p>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">📬</div>
+      <h3>Multi-account Gmail sync</h3>
+      <p>Register any number of Gmail accounts under one daemon. All threads and messages land in one database.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📅</div>
+      <h3>Google Calendar sync</h3>
+      <p>Events, attendees, and recurrence rules synced incrementally. Full-text search across event titles and descriptions.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Full-text search (FTS5)</h3>
+      <p>SQLite FTS5 indexes on messages and events. Sub-millisecond local search, no external search service needed.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🤖</div>
+      <h3>MCP server</h3>
+      <p>Exposes all data at <code>localhost:7071/sse</code>. Drop the config snippet into Claude, Cursor, or any MCP-compatible agent.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🗄️</div>
+      <h3>Raw SQL access</h3>
+      <p>Read-only SQL interface via <code>POST /v1/query</code>. Query the database directly from any HTTP client or agent tool.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Incremental sync</h3>
+      <p>Gmail <code>historyId</code> and Calendar <code>syncToken</code> mean only deltas are fetched — fast, battery-friendly, and quota-safe.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ── -->
+<section class="section" id="quickstart">
+  <div class="section-label">Quickstart</div>
+  <h2 class="section-title">Up and running in minutes</h2>
+  <p class="section-sub">
+    You need a Google Cloud project with Gmail and Calendar APIs enabled, and an
+    OAuth client credentials JSON (Desktop app type).
+  </p>
+  <div class="steps">
+    <div class="step">
+      <h3>Install</h3>
+      <p><code>pipx install chronos-agent-inbox</code><br>or clone the repo and <code>pip install -e .</code></p>
+    </div>
+    <div class="step">
+      <h3>Stage credentials</h3>
+      <p><code>chronos --use /path/to/credentials.json</code><br>Points Chronos at your OAuth client JSON from Google Cloud Console.</p>
+    </div>
+    <div class="step">
+      <h3>Add an account</h3>
+      <p><code>chronos --add personal</code><br>Opens the browser for OAuth2 consent. Repeat for as many accounts as you need.</p>
+    </div>
+    <div class="step">
+      <h3>Start the daemon</h3>
+      <p><code>chronos --start</code><br>HTTP API on <code>:7070</code>, MCP/SSE on <code>:7071</code>. Syncs run in the background.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── MCP config ── -->
+<section class="section" id="mcp">
+  <div class="section-label">Agent integration</div>
+  <h2 class="section-title">Add Chronos to your MCP client</h2>
+  <p class="section-sub">
+    Paste this into your Claude, Cursor, or other MCP-compatible agent configuration.
+    Make sure <code>chronos --start</code> is running first.
+  </p>
+  <div class="snippet-wrap">
+    <div class="snippet-header">
+      <div class="dots">
+        <div class="dot dot-r"></div>
+        <div class="dot dot-y"></div>
+        <div class="dot dot-g"></div>
+      </div>
+      <span>claude_desktop_config.json / .cursor/mcp.json</span>
+    </div>
+    <pre><span class="cm">// Claude Desktop — ~/Library/Application Support/Claude/claude_desktop_config.json</span>
+{
+  <span class="kw">"mcpServers"</span>: {
+    <span class="kw">"chronos"</span>: {
+      <span class="kw">"url"</span>: <span class="str">"http://localhost:7071/sse"</span>,
+      <span class="kw">"transport"</span>: <span class="str">"sse"</span>
+    }
+  }
+}</pre>
+  </div>
+</section>
+
+<!-- ── CLI reference ── -->
+<section class="section" id="cli">
+  <div class="section-label">CLI Reference</div>
+  <h2 class="section-title">All commands at a glance</h2>
+  <p class="section-sub">Run <code>chronos --help</code> for full Google Cloud Console setup instructions.</p>
+  <div class="snippet-wrap">
+    <table>
+      <thead>
+        <tr><th>Command</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>--use CREDENTIALS_PATH</code></td><td>Stage an OAuth credentials JSON for the next <code>--add</code> call</td></tr>
+        <tr><td><code>--add ALIAS</code></td><td>Register a new account (opens browser for consent)</td></tr>
+        <tr><td><code>--remove ALIAS</code></td><td>Remove an account and its data</td></tr>
+        <tr><td><code>--list</code></td><td>List all registered accounts</td></tr>
+        <tr><td><code>--test ALIAS</code></td><td>Verify account tokens are valid</td></tr>
+        <tr><td><code>--start [--http-port N] [--mcp-port N]</code></td><td>Start the sync daemon</td></tr>
+        <tr><td><code>--stop</code></td><td>Clean shutdown — preserves synced data</td></tr>
+        <tr><td><code>--status</code></td><td>Show sync status for all accounts</td></tr>
+        <tr><td><code>--sync [ALIAS] [--type full|incremental]</code></td><td>Trigger a manual sync</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:1rem; font-size:0.85rem; color:var(--muted);">
+    <strong>Note:</strong> <code>Ctrl+C</code> during <code>--start</code> wipes synced data (emails, events) but
+    preserves accounts. Use <code>chronos --stop</code> from another terminal for a safe shutdown.
+  </p>
+</section>
+
+<footer>
+  <p>
+    Chronos is open source under the <a href="https://opensource.org/licenses/MIT">MIT License</a> ·
+    <a href="https://github.com/CourtimusPrime/chronos">GitHub</a>
+  </p>
+</footer>
+
+<script>
+  function copyInstall(btn) {
+    navigator.clipboard.writeText('pipx install chronos-agent-inbox').then(() => {
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 1800);
+    });
+  }
+</script>
+</body>
+</html>

@@ -22,6 +22,12 @@ GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 RATE_LIMIT_BASE = 2.0
 RATE_LIMIT_MAX = 64.0
 
+# Concurrent in-flight messages.get requests. Gmail allows 250 quota units/sec
+# per user; messages.get costs 5 units, so the per-second ceiling is ~50.
+# 10 concurrent in-flight requests with ~200ms latency = ~50/sec — right at the
+# safe edge. Tuneable via CHRONOS_GMAIL_CONCURRENCY env var if needed.
+GMAIL_FETCH_CONCURRENCY = 10
+
 # Gmail system labels — stored verbatim
 SYSTEM_LABELS = {
     "INBOX", "UNREAD", "STARRED", "SENT", "DRAFT", "SPAM", "TRASH",
@@ -217,6 +223,16 @@ class GmailWorker:
         last_history_id = None
 
         try:
+            sem = asyncio.Semaphore(GMAIL_FETCH_CONCURRENCY)
+
+            async def _fetch_one(client: httpx.AsyncClient, msg_id: str) -> dict:
+                async with sem:
+                    return await self._api_get(
+                        client,
+                        f"{GMAIL_API_BASE}/users/me/messages/{msg_id}",
+                        {"format": "full"},
+                    )
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Get all message IDs
                 page_token = None
@@ -230,16 +246,19 @@ class GmailWorker:
                     )
                     messages = data.get("messages", [])
 
-                    # Fetch each message
-                    for msg_stub in messages:
-                        msg_data = await self._api_get(
-                            client,
-                            f"{GMAIL_API_BASE}/users/me/messages/{msg_stub['id']}",
-                            {"format": "full"},
-                        )
+                    # Fetch all messages on this page concurrently (bounded by sem)
+                    fetched = await asyncio.gather(
+                        *(_fetch_one(client, m["id"]) for m in messages),
+                        return_exceptions=True,
+                    )
+
+                    # Upsert sequentially (single SQLite connection, no contention)
+                    for msg_data in fetched:
+                        if isinstance(msg_data, Exception):
+                            logger.warning("Failed to fetch message: %s", msg_data)
+                            continue
                         await asyncio.to_thread(self._upsert_message, conn, msg_data)
                         records_synced += 1
-
                         if "historyId" in msg_data:
                             last_history_id = msg_data["historyId"]
 
@@ -293,6 +312,16 @@ class GmailWorker:
         records_synced = 0
 
         try:
+            sem = asyncio.Semaphore(GMAIL_FETCH_CONCURRENCY)
+
+            async def _fetch_one(client: httpx.AsyncClient, msg_id: str) -> dict:
+                async with sem:
+                    return await self._api_get(
+                        client,
+                        f"{GMAIL_API_BASE}/users/me/messages/{msg_id}",
+                        {"format": "full"},
+                    )
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 page_token = None
                 new_history_id = self._sync_cursor
@@ -320,28 +349,34 @@ class GmailWorker:
                     if "historyId" in data:
                         new_history_id = data["historyId"]
 
+                    # Collect added + deleted IDs across all history items on this page
+                    added_ids: list[str] = []
+                    deleted_ids: list[str] = []
                     for history_item in data.get("history", []):
-                        # Messages added
-                        for added in history_item.get("messagesAdded", []):
-                            msg_id = added["message"]["id"]
-                            try:
-                                msg_data = await self._api_get(
-                                    client,
-                                    f"{GMAIL_API_BASE}/users/me/messages/{msg_id}",
-                                    {"format": "full"},
-                                )
-                                await asyncio.to_thread(self._upsert_message, conn, msg_data)
-                                records_synced += 1
-                            except Exception as e:
-                                logger.warning("Failed to fetch message %s: %s", msg_id, e)
+                        added_ids.extend(
+                            a["message"]["id"] for a in history_item.get("messagesAdded", [])
+                        )
+                        deleted_ids.extend(
+                            d["message"]["id"] for d in history_item.get("messagesDeleted", [])
+                        )
 
-                        # Messages deleted
-                        for deleted in history_item.get("messagesDeleted", []):
-                            msg_id = deleted["message"]["id"]
-                            await asyncio.to_thread(
-                                self._delete_message, conn, msg_id
-                            )
+                    # Fetch all new messages concurrently
+                    if added_ids:
+                        fetched = await asyncio.gather(
+                            *(_fetch_one(client, mid) for mid in added_ids),
+                            return_exceptions=True,
+                        )
+                        for msg_id, msg_data in zip(added_ids, fetched):
+                            if isinstance(msg_data, Exception):
+                                logger.warning("Failed to fetch message %s: %s", msg_id, msg_data)
+                                continue
+                            await asyncio.to_thread(self._upsert_message, conn, msg_data)
                             records_synced += 1
+
+                    # Deletes are local-only; do them sequentially
+                    for msg_id in deleted_ids:
+                        await asyncio.to_thread(self._delete_message, conn, msg_id)
+                        records_synced += 1
 
                         # Labels added
                         for label_change in history_item.get("labelsAdded", []):
