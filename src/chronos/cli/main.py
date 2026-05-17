@@ -93,14 +93,22 @@ def _validate_alias(alias: str) -> None:
 
 GOOGLE_SETUP = """
 \b
-Google Cloud Console Setup
-==========================
+Google Cloud Console Setup (Web Application)
+============================================
 1. Visit https://console.cloud.google.com/projectcreate and create a project.
 2. APIs & Services → Library: enable "Gmail API" and "Google Calendar API".
-3. APIs & Services → OAuth consent screen → External, fill in app name and your
-   email; add your Google account as a Test User.
+3. APIs & Services → OAuth consent screen → External:
+     - Fill in app name and your email.
+     - Add your Google account as a Test User (the app must stay in **Testing**
+       mode — Production requires CASA verification for the Gmail scope).
+     - Click "Add or remove scopes" → filter "restricted" → tick
+       `https://mail.google.com/`. Also add
+       `https://www.googleapis.com/auth/calendar`.
 4. APIs & Services → Credentials → Create Credentials → OAuth client ID.
-   Application type: Desktop app. Download the JSON file.
+     - Application type: **Web application**.
+     - Authorized redirect URIs → add: http://localhost:9004/callback
+       (or, if you customized oauth.callback_port in config.yml, match that.)
+     - Download the JSON file.
 5. chronos --use /path/to/downloaded.json
 6. chronos --add <alias>     (opens browser for consent)
 7a. Add to .mcp.json for agents (recommended):
@@ -125,12 +133,20 @@ def _show_welcome() -> None:
     steps.append("  APIs & Services → Library\n", style="dim")
     steps.append("  Enable:  Gmail API  ·  Google Calendar API\n\n")
     steps.append("Step 3 — OAuth consent screen\n", style="bold")
-    steps.append("  External → fill in app name → add your Google account as a Test User\n\n", style="dim")
+    steps.append("  External → fill in app name → add your Google account as a Test User\n", style="dim")
+    steps.append("  Keep the app in ", style="dim")
+    steps.append("Testing", style="bold yellow")
+    steps.append(" mode (Production requires CASA verification)\n", style="dim")
+    steps.append("  Add restricted scope ", style="dim")
+    steps.append("https://mail.google.com/", style="bold")
+    steps.append(" and the Calendar scope\n\n", style="dim")
     steps.append("Step 4 — Create credentials\n", style="bold")
     steps.append("  Credentials → Create Credentials → OAuth client ID\n", style="dim")
     steps.append("  Application type: ", style="dim")
-    steps.append("Desktop app", style="bold yellow")
-    steps.append("  → Download the JSON file\n\n")
+    steps.append("Web application", style="bold yellow")
+    steps.append("\n  Authorized redirect URI: ", style="dim")
+    steps.append("http://localhost:9004/callback", style="bold")
+    steps.append("\n  → Download the JSON file\n\n", style="dim")
     steps.append("Step 5 — Stage the credentials file\n", style="bold")
     steps.append("  $ chronos --use /path/to/credentials.json\n\n", style="green")
     steps.append("Step 6 — Add your account (opens browser)\n", style="bold")
@@ -281,7 +297,9 @@ def _wipe_synced_data(db_path: str | None) -> None:
 
 
 def _cmd_use(creds_path: str) -> None:
-    """Stage a credentials JSON file for use with --add."""
+    """Stage a credentials JSON file (Web Application OAuth client) for --add."""
+    from chronos.config import get as _cfg
+
     src = Path(creds_path)
 
     try:
@@ -289,11 +307,35 @@ def _cmd_use(creds_path: str) -> None:
     except (json.JSONDecodeError, ValueError):
         raise SystemExit("Error: could not parse credentials file")
 
-    if "web" in data:
-        raise SystemExit('Error: credentials file must use application type "Desktop app"')
+    callback_port = int(_cfg("oauth.callback_port", 9004))
+    callback_path = str(_cfg("oauth.callback_path", "/callback"))
+    if not callback_path.startswith("/"):
+        callback_path = "/" + callback_path
+    redirect_uri = f"http://localhost:{callback_port}{callback_path}"
 
-    if "installed" not in data:
-        raise SystemExit("Error: could not parse credentials file")
+    if "installed" in data:
+        raise SystemExit(
+            "Desktop App credentials are no longer supported. Create a Web "
+            "Application OAuth client in Google Cloud Console (Application "
+            f"type: Web application), add {redirect_uri} as an Authorized "
+            "redirect URI, then re-download the JSON. Run `chronos --help` "
+            "for full setup instructions."
+        )
+
+    if "web" not in data:
+        raise SystemExit(
+            "Error: unrecognized credentials JSON shape (expected top-level "
+            "'web' key from a Web Application OAuth client)."
+        )
+
+    redirect_uris = data["web"].get("redirect_uris") or []
+    if redirect_uri not in redirect_uris:
+        raise SystemExit(
+            f"Web App credentials do not include the configured callback URL "
+            f"{redirect_uri}. Add it as an Authorized redirect URI in Google "
+            f"Cloud Console (APIs & Services → Credentials → your OAuth 2.0 "
+            f"Client ID) and re-download the JSON."
+        )
 
     dest = _pending_creds_path()
     dest.parent.mkdir(parents=True, exist_ok=True)
