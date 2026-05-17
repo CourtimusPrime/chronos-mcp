@@ -32,20 +32,45 @@ def _migrate_add_from_name(conn: sqlite3.Connection) -> None:
                 conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0])
 
 
+def _migrate_add_web_url(conn: sqlite3.Connection) -> None:
+    """Add web_url column and backfill Gmail permalink for existing messages."""
+    if "web_url" in _existing_columns(conn, "messages"):
+        return
+    conn.execute("ALTER TABLE messages ADD COLUMN web_url TEXT")
+    conn.execute("""
+        UPDATE messages SET web_url =
+            'https://mail.google.com/mail/u/0/#all/' || provider_message_id
+    """)
+    logger.info("Migration: added web_url column.")
+
+
 def _backfill_body_text(conn: sqlite3.Connection) -> None:
-    """Derive body_text from body_html for rows that lack clean plain text."""
+    """Ensure body_text is clean plain text for all messages."""
+    import html as html_mod
     rows = conn.execute(
-        "SELECT id, body_text, body_html FROM messages WHERE body_html IS NOT NULL"
+        "SELECT id, body_text, body_html FROM messages"
     ).fetchall()
     updates = []
     for row in rows:
         body_text = row["body_text"]
         body_html = row["body_html"]
-        if (not body_text or _looks_like_html(body_text)) and body_html:
-            updates.append((_strip_html(body_html), row["id"]))
+        new_text = body_text
+
+        if not body_text and body_html:
+            new_text = _strip_html(body_html)
+        elif body_text and _looks_like_html(body_text):
+            new_text = _strip_html(body_html if body_html else body_text)
+
+        # Unescape HTML entities regardless of origin
+        if new_text:
+            new_text = html_mod.unescape(new_text)
+
+        if new_text != body_text:
+            updates.append((new_text, row["id"]))
+
     if updates:
         conn.executemany("UPDATE messages SET body_text = ? WHERE id = ?", updates)
-        logger.info("Backfilled body_text for %d messages.", len(updates))
+        logger.info("Cleaned body_text for %d messages.", len(updates))
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -56,6 +81,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             if ddl:
                 conn.execute(ddl)
         _migrate_add_from_name(conn)
+        _migrate_add_web_url(conn)
         _backfill_body_text(conn)
         conn.commit()
         logger.debug("Schema migrations applied successfully.")

@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS messages (
   attachment_names    TEXT,
   in_reply_to         TEXT,
   references_header   TEXT,
+  web_url             TEXT,
   sync_state          TEXT    NOT NULL DEFAULT 'synced',
   created_at          INTEGER NOT NULL,
   provider_raw        TEXT,

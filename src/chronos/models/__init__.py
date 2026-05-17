@@ -52,6 +52,7 @@ class Message:
     attachment_names: Optional[str]  # JSON list
     in_reply_to: Optional[str]
     references_header: Optional[str]
+    web_url: Optional[str]
     sync_state: str  # 'synced' | 'pending' | 'conflict'
     created_at: int
     provider_raw: Optional[str]

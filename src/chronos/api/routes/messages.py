@@ -27,6 +27,7 @@ def _message_to_dict(row: sqlite3.Row, include_full: bool = False) -> dict:
         "subject": row["subject"],
         "from_address": row["from_address"],
         "from_name": row["from_name"],
+        "web_url": row["web_url"],
         "to_addresses": json.loads(row["to_addresses"]) if row["to_addresses"] else [],
         "cc_addresses": json.loads(row["cc_addresses"]) if row["cc_addresses"] else None,
         "bcc_addresses": json.loads(row["bcc_addresses"]) if row["bcc_addresses"] else None,

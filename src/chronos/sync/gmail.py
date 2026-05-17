@@ -155,9 +155,14 @@ def _strip_html(raw: str) -> str:
     return text.strip()
 
 
+_HTML_STRUCTURAL = re.compile(
+    r"<(?:html|head|body|div|span|table|td|tr|p|br|ul|ol|li|h[1-6]|style|script)\b",
+    re.I,
+)
+
+
 def _looks_like_html(text: str) -> bool:
-    stripped = text.lstrip()
-    return stripped.startswith("<") and bool(re.search(r"<(html|head|body|div|table|span|p)\b", stripped[:500], re.I))
+    return bool(_HTML_STRUCTURAL.search(text[:2000]))
 
 
 def _extract_body(payload: dict) -> tuple[Optional[str], Optional[str]]:
@@ -180,12 +185,15 @@ def _extract_body(payload: dict) -> tuple[Optional[str], Optional[str]]:
             if ph and not body_html:
                 body_html = ph
 
-    # Derive clean plain text from HTML when no text/plain part exists,
-    # or when the sender mislabeled an HTML payload as text/plain.
+    # Strip HTML and derive clean plain text.
     if body_text and _looks_like_html(body_text):
-        body_text = _strip_html(body_text)
-    if not body_text and body_html:
+        body_text = _strip_html(body_html if body_html else body_text)
+    elif not body_text and body_html:
         body_text = _strip_html(body_html)
+
+    # Unescape any residual HTML entities (&amp; &nbsp; etc.) in plain text.
+    if body_text:
+        body_text = html_mod.unescape(body_text)
 
     return body_text, body_html
 
@@ -542,6 +550,7 @@ class GmailWorker:
         subject = _get_header(headers, "Subject")
         from_address = _get_header(headers, "From") or ""
         from_name, _ = email.utils.parseaddr(from_address)
+        web_url = f"https://mail.google.com/mail/u/0/#all/{provider_message_id}"
         to_raw = _get_header(headers, "To") or ""
         cc_raw = _get_header(headers, "Cc")
         bcc_raw = _get_header(headers, "Bcc")
@@ -604,14 +613,14 @@ class GmailWorker:
                     to_addresses = ?, cc_addresses = ?, bcc_addresses = ?, date_unix = ?,
                     body_text = ?, body_html = ?, labels = ?, has_attachments = ?,
                     attachment_names = ?, in_reply_to = ?, references_header = ?,
-                    sync_state = 'synced', provider_raw = ?
+                    web_url = ?, sync_state = 'synced', provider_raw = ?
                 WHERE id = ?
                 """,
                 (
                     internal_thread_id, subject, from_address, from_name,
                     to_addresses, cc_addresses, bcc_addresses, date_unix,
                     body_text, body_html, labels, has_attachments, attachment_names_json,
-                    in_reply_to, references_header, json.dumps(msg_data),
+                    in_reply_to, references_header, web_url, json.dumps(msg_data),
                     existing["id"],
                 ),
             )
@@ -623,14 +632,14 @@ class GmailWorker:
                     id, account_id, thread_id, provider_message_id, subject,
                     from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
                     date_unix, body_text, body_html, labels, has_attachments, attachment_names,
-                    in_reply_to, references_header, sync_state, created_at, provider_raw
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?)
+                    in_reply_to, references_header, web_url, sync_state, created_at, provider_raw
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?)
                 """,
                 (
                     msg_id, self.account_id, internal_thread_id, provider_message_id, subject,
                     from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
                     date_unix, body_text, body_html, labels, has_attachments, attachment_names_json,
-                    in_reply_to, references_header, now_ms, json.dumps(msg_data),
+                    in_reply_to, references_header, web_url, now_ms, json.dumps(msg_data),
                 ),
             )
 
