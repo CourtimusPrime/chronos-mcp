@@ -1,12 +1,12 @@
 ---
-name: chronos-agent-inbox
+name: chronos-mcp
 version: 0.1.0
 description: >
   Local-first email and calendar inbox for AI agents. Syncs Gmail and Google Calendar
   into a local SQLite database. Query all accounts through a single MCP server on localhost.
   Supports multiple accounts per provider.
 entrypoint: chronos --start
-install: pipx install chronos-agent-inbox
+install: pipx install chronos-mcp
 interface:
   - type: mcp
     transport: sse
@@ -41,7 +41,7 @@ through a Model Context Protocol (MCP) server on localhost.
 
 ```bash
 # Install
-pipx install chronos-agent-inbox
+pipx install chronos-mcp
 
 # Step 1: Stage your Google Cloud credentials (Desktop app OAuth JSON)
 # Run 'chronos --help' for full Google Cloud Console setup instructions.

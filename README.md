@@ -20,7 +20,7 @@ into a single queryable SQLite database and exposes all data through an MCP serv
 ## Installation
 
 ```bash
-pipx install chronos-agent-inbox
+pipx install chronos-mcp
 ```
 
 Or from source:
