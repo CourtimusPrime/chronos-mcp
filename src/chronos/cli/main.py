@@ -356,6 +356,12 @@ def cli(
     sync_type,
 ):
     """Chronos — agent-inbox: local-first email and calendar sync daemon."""
+    # Materialize ~/.chronos/config.yml from the bundled template on first run.
+    # Idempotent — won't overwrite an existing user config.
+    from chronos.config import ensure_user_config, reset_cache as _reset_cfg
+    if ensure_user_config() is not None:
+        _reset_cfg()
+
     if use_creds:
         _cmd_use(use_creds)
         return
@@ -514,10 +520,7 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
     from chronos.api.app import create_app
     from chronos.mcp.server import create_mcp_server
 
-    from chronos.config import ensure_user_config, get as _cfg, reset_cache as _reset_cfg
-    written = ensure_user_config()
-    if written is not None and written.stat().st_size > 0:
-        _reset_cfg()  # pick up the freshly materialized file on first run
+    from chronos.config import get as _cfg
     _http_port = http_port or int(os.environ.get("CHRONOS_HTTP_PORT", _cfg("network.http_port", 7070)))
     _mcp_port = mcp_port or int(os.environ.get("CHRONOS_MCP_PORT", _cfg("network.mcp_port", 7071)))
 
