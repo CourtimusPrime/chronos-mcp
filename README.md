@@ -26,7 +26,7 @@ pipx install chronos-agent-inbox
 Or from source:
 
 ```bash
-git clone https://github.com/your-org/chronos.git
+git clone https://github.com/CourtimusPrime/chronos.git
 cd chronos
 pip install -e .
 ```
@@ -62,6 +62,7 @@ chronos --add work
 ```
 
 The `--add` step:
+
 - Writes `~/.chronos/personal_token.json` (self-contained token file)
 - Creates two rows in the accounts table (gmail + google_calendar)
 - Prints a confirmation summary
@@ -96,13 +97,13 @@ chronos --sync [ALIAS] [--type full|incremental]  # Trigger sync
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CHRONOS_HOME` | `~/.chronos` | Credentials and database directory |
-| `CHRONOS_DB_PATH` | `$CHRONOS_HOME/chronos.db` | SQLite database file |
-| `CHRONOS_HTTP_PORT` | `7070` | HTTP API port |
-| `CHRONOS_MCP_PORT` | `7071` | MCP server port |
-| `CHRONOS_LOG_LEVEL` | `INFO` | Log level |
+| Variable            | Default                    | Description                        |
+| ------------------- | -------------------------- | ---------------------------------- |
+| `CHRONOS_HOME`      | `~/.chronos`               | Credentials and database directory |
+| `CHRONOS_DB_PATH`   | `$CHRONOS_HOME/chronos.db` | SQLite database file               |
+| `CHRONOS_HTTP_PORT` | `7070`                     | HTTP API port                      |
+| `CHRONOS_MCP_PORT`  | `7071`                     | MCP server port                    |
+| `CHRONOS_LOG_LEVEL` | `INFO`                     | Log level                          |
 
 ## License
 
