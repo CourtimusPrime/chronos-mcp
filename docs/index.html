@@ -752,9 +752,9 @@
     </div>
     <div class="step">
       <div class="step-num">04</div>
-      <div class="step-tag">Launch</div>
-      <h3>Start the daemon</h3>
-      <p><code>chronos --start</code> — HTTP API on <code>:7070</code>, MCP/SSE on <code>:7071</code>. Syncs run in the background.</p>
+      <div class="step-tag">Connect</div>
+      <h3>Add to your agent</h3>
+      <p>Drop the config below into <code>.mcp.json</code> — the agent starts Chronos automatically. Or run <code>chronos --start</code> for daemon mode.</p>
     </div>
   </div>
 </section>
@@ -768,16 +768,35 @@
     <h2>Add Chronos to<br><em>your MCP client</em></h2>
   </div>
   <div class="mcp-layout">
-    <div class="snippet-wrap">
-      <div class="snippet-header">
-        <div class="snippet-dots">
-          <div class="dot dot-r"></div>
-          <div class="dot dot-y"></div>
-          <div class="dot dot-g"></div>
+    <div>
+      <div class="snippet-wrap" style="margin-bottom:1rem">
+        <div class="snippet-header">
+          <div class="snippet-dots">
+            <div class="dot dot-r"></div>
+            <div class="dot dot-y"></div>
+            <div class="dot dot-g"></div>
+          </div>
+          <span class="snippet-filename">.mcp.json — Claude Code · Cursor · any stdio client</span>
         </div>
-        <span class="snippet-filename">claude_desktop_config.json · .cursor/mcp.json</span>
+        <pre>{
+  <span class="kw">"mcpServers"</span>: {
+    <span class="kw">"chronos"</span>: {
+      <span class="kw">"command"</span>: <span class="str">"chronos"</span>,
+      <span class="kw">"args"</span>: [<span class="str">"--mcp-stdio"</span>]
+    }
+  }
+}</pre>
       </div>
-      <pre><span class="cm">// ~/Library/Application Support/Claude/claude_desktop_config.json</span>
+      <div class="snippet-wrap">
+        <div class="snippet-header">
+          <div class="snippet-dots">
+            <div class="dot dot-r"></div>
+            <div class="dot dot-y"></div>
+            <div class="dot dot-g"></div>
+          </div>
+          <span class="snippet-filename">claude_desktop_config.json — SSE / daemon mode</span>
+        </div>
+        <pre><span class="cm">// requires: chronos --start</span>
 {
   <span class="kw">"mcpServers"</span>: {
     <span class="kw">"chronos"</span>: {
@@ -786,19 +805,20 @@
     }
   }
 }</pre>
+      </div>
     </div>
     <div class="mcp-notes">
       <div class="mcp-note-item">
-        <div class="mcp-note-label">Setup</div>
-        <p>Paste this snippet into your Claude, Cursor, or other MCP-compatible agent configuration. Make sure <strong>chronos --start</strong> is running before connecting.</p>
+        <div class="mcp-note-label">Stdio mode (recommended)</div>
+        <p><strong>chronos --mcp-stdio</strong> starts an embedded stack — sync engine, internal HTTP API, and MCP interface all in one process. No separate daemon needed. The agent launches it on demand.</p>
+      </div>
+      <div class="mcp-note-item">
+        <div class="mcp-note-label">SSE / daemon mode</div>
+        <p>Run <strong>chronos --start</strong> to get a long-lived daemon with HTTP API on <strong>:7070</strong> and MCP/SSE on <strong>:7071</strong>. Useful when multiple clients share one sync process.</p>
       </div>
       <div class="mcp-note-item">
         <div class="mcp-note-label">What you get</div>
-        <p>The MCP server exposes tools for searching Gmail threads, reading calendar events, querying the raw SQLite database, and triggering syncs — all locally without leaving your machine.</p>
-      </div>
-      <div class="mcp-note-item">
-        <div class="mcp-note-label">Ports</div>
-        <p>HTTP API at <strong>:7070</strong>, MCP/SSE at <strong>:7071</strong>. Both ports are configurable via <strong>--http-port</strong> and <strong>--mcp-port</strong> flags.</p>
+        <p>12 MCP tools: search messages, read threads, list and create calendar events, raw SQL queries, trigger syncs — all local, no cloud round-trips.</p>
       </div>
     </div>
   </div>
@@ -826,15 +846,15 @@
         <tr><td>--remove ALIAS</td><td>Remove an account and its data</td></tr>
         <tr><td>--list</td><td>List all registered accounts</td></tr>
         <tr><td>--test ALIAS</td><td>Verify account tokens are valid</td></tr>
-        <tr><td>--start [--http-port N] [--mcp-port N]</td><td>Start the sync daemon</td></tr>
+        <tr><td>--mcp-stdio</td><td>Start embedded MCP server on stdio — no daemon needed, use in <code>.mcp.json</code></td></tr>
+        <tr><td>--start [--http-port N] [--mcp-port N]</td><td>Start the sync daemon (HTTP API + SSE MCP + background sync)</td></tr>
         <tr><td>--stop</td><td>Clean shutdown — preserves synced data</td></tr>
         <tr><td>--status</td><td>Show sync status for all accounts</td></tr>
         <tr><td>--sync [ALIAS] [--type full|incremental]</td><td>Trigger a manual sync</td></tr>
       </tbody>
     </table>
     <div class="table-footer">
-      <strong>Note:</strong> Ctrl+C during --start wipes synced data (emails, events) but preserves accounts.
-      Use <code style="font-family:var(--font-mono);font-size:0.76rem;color:var(--green)">chronos --stop</code> from another terminal for a safe shutdown.
+      <strong>Note:</strong> <code style="font-family:var(--font-mono);font-size:0.76rem;color:var(--green)">--mcp-stdio</code> is the recommended agent integration — no daemon required. Ctrl+C during <code style="font-family:var(--font-mono);font-size:0.76rem;color:var(--green)">--start</code> wipes synced data but preserves accounts; use <code style="font-family:var(--font-mono);font-size:0.76rem;color:var(--green)">chronos --stop</code> for a clean daemon shutdown.
     </div>
   </div>
 </section>

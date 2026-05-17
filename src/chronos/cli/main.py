@@ -103,10 +103,13 @@ Google Cloud Console Setup
    Application type: Desktop app. Download the JSON file.
 5. chronos --use /path/to/downloaded.json
 6. chronos --add <alias>     (opens browser for consent)
-7. chronos --start           (runs daemon + sync)
+7a. Add to .mcp.json for agents (recommended):
+    { "mcpServers": { "chronos": { "command": "chronos", "args": ["--mcp-stdio"] } } }
+7b. chronos --start          (daemon mode: HTTP API + SSE MCP + background sync)
 
-Tip: Ctrl+C while --start is running wipes synced data but keeps accounts.
-Use 'chronos --stop' from another terminal for a clean shutdown that preserves data.
+Tip: --mcp-stdio starts an embedded stack (no separate daemon needed).
+     Ctrl+C while --start is running wipes synced data but keeps accounts.
+     Use 'chronos --stop' from another terminal for a clean daemon shutdown.
 """
 
 
@@ -329,7 +332,8 @@ def _cmd_add(alias: str, db_path: str | None) -> None:
 @click.option("--list", "list_accounts", is_flag=True, help="List all registered accounts")
 @click.option("--test", "test_alias", metavar="ALIAS", help="Test an existing account's tokens")
 @click.option("--start", "start_daemon", is_flag=True, help="Start the Chronos daemon")
-@click.option("--mcp-stdio", "mcp_stdio", is_flag=True, help="Start MCP server on stdio (agent subprocess mode)")
+@click.option("--mcp", "install_mcp", is_flag=True, help="Add Chronos to an .mcp.json file (prompts for project or global scope)")
+@click.option("--mcp-stdio", "mcp_stdio", is_flag=True, help="Start MCP server on stdio — embedded stack, no daemon needed (use in .mcp.json)")
 @click.option("--stop", "stop_daemon", is_flag=True, help="Stop the running daemon")
 @click.option("--status", "show_status", is_flag=True, help="Show sync status")
 @click.option("--sync", "sync_alias", metavar="[ALIAS]", default=None, help="Trigger sync")
@@ -346,6 +350,7 @@ def cli(
     list_accounts,
     test_alias,
     start_daemon,
+    install_mcp,
     mcp_stdio,
     stop_daemon,
     show_status,
@@ -369,6 +374,9 @@ def cli(
     if add_alias:
         _cmd_add(add_alias, db_path)
         return
+
+    elif install_mcp:
+        _cmd_mcp_install()
 
     elif mcp_stdio:
         _cmd_mcp_stdio(http_port, db_path)
@@ -467,6 +475,39 @@ def _cmd_list(db_path: str | None) -> None:
     console.print(table)
 
 
+def _cmd_mcp_install() -> None:
+    """Prompt for scope and write the chronos stdio entry into .mcp.json."""
+    scope = click.prompt(
+        "Scope",
+        type=click.Choice(["project", "global"], case_sensitive=False),
+        default="project",
+    )
+
+    if scope.lower() == "project":
+        target = Path.cwd() / ".mcp.json"
+    else:
+        target = Path.home() / ".claude" / ".mcp.json"
+
+    existing: dict = {}
+    if target.exists():
+        try:
+            existing = json.loads(target.read_text())
+        except json.JSONDecodeError:
+            console.print(f"[yellow]Warning: {target} contains invalid JSON — overwriting.[/yellow]")
+
+    existing.setdefault("mcpServers", {})
+    existing["mcpServers"]["chronos"] = {
+        "command": "chronos",
+        "args": ["--mcp-stdio"],
+    }
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(existing, indent=2) + "\n")
+
+    console.print(f"[green]✓ Added chronos to {target}[/green]")
+    console.print("  [dim]Restart your MCP client (Claude Code, Cursor, …) to pick up the change.[/dim]")
+
+
 def _cmd_mcp_stdio(http_port: int | None, db_path: str | None) -> None:
     """Start MCP in stdio transport mode — full stack embedded, no external daemon needed.
 
@@ -531,7 +572,8 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
 
     console.print(f"[bold green]Starting Chronos daemon...[/bold green]")
     console.print(f"  HTTP API:  http://127.0.0.1:{_http_port}")
-    console.print(f"  MCP:       http://127.0.0.1:{_mcp_port}/sse")
+    console.print(f"  MCP (SSE): http://127.0.0.1:{_mcp_port}/sse")
+    console.print(f"  MCP (stdio): chronos --mcp-stdio  [dim](recommended for Claude Code / agent subprocesses)[/dim]")
     console.print("[yellow]Tip: Ctrl+C will wipe synced data. Use 'chronos --stop' for a clean shutdown.[/yellow]")
 
     interrupted = False
