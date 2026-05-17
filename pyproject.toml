@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "chronos-agent-inbox"
-version = "0.1.0"
+name = "chronos-mcp"
+version = "0.1.1"
 description = "Local-first email and calendar inbox for AI agents"
 readme = "README.md"
 license = { text = "MIT" }
