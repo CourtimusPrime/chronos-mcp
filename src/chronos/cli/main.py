@@ -593,19 +593,57 @@ def _cmd_mcp_stdio(http_port: int | None, db_path: str | None) -> None:
     The agent communicates via stdin/stdout using the MCP protocol.
     """
     import asyncio
-    _http_port = http_port or int(os.environ.get("CHRONOS_HTTP_PORT", "7072"))  # internal port
-    asyncio.run(_run_mcp_stdio(db_path, _http_port))
+    asyncio.run(_run_mcp_stdio(db_path, http_port))
 
 
-async def _run_mcp_stdio(db_path: str | None, http_port: int) -> None:
-    """Run DB + sync engine + internal HTTP API + MCP stdio concurrently."""
+def _daemon_port() -> int:
+    """Return the configured daemon HTTP port."""
+    from chronos.config import get as _cfg
+    return int(os.environ.get("CHRONOS_HTTP_PORT", _cfg("network.http_port", 7070)))
+
+
+def _daemon_running(port: int) -> bool:
+    """Return True if a Chronos HTTP daemon is already listening on *port*."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _free_port() -> int:
+    """Ask the OS for an available ephemeral port."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+async def _run_mcp_stdio(db_path: str | None, http_port: int | None) -> None:
+    """Run DB + sync engine + internal HTTP API + MCP stdio concurrently.
+
+    If the Chronos daemon is already running, attach to it rather than
+    starting a redundant embedded stack. This avoids port conflicts when
+    multiple Claude Code sessions are open simultaneously.
+    """
     import asyncio
     import uvicorn
+    from chronos.mcp.server import get_mcp_instance
+
+    daemon_port = http_port or _daemon_port()
+
+    if _daemon_running(daemon_port):
+        # Daemon is live — just wire the MCP layer to it.
+        mcp = get_mcp_instance(daemon_port)
+        await mcp.run_stdio_async()
+        return
+
+    # No daemon — start the full embedded stack on a free port.
     from chronos.db.connection import get_connection
     from chronos.db.migrations import apply_migrations
     from chronos.sync.engine import SyncEngine
     from chronos.api.app import create_app
-    from chronos.mcp.server import get_mcp_instance
+
+    embedded_port = http_port or _free_port()
 
     conn = get_connection(db_path)
     apply_migrations(conn)
@@ -613,14 +651,15 @@ async def _run_mcp_stdio(db_path: str | None, http_port: int) -> None:
 
     app = create_app(db_path)
     sync_engine = SyncEngine(db_path)
-    mcp = get_mcp_instance(http_port)
+    mcp = get_mcp_instance(embedded_port)
 
     http_config = uvicorn.Config(
         app,
         host="127.0.0.1",
-        port=http_port,
-        log_level="error",   # keep stdio clean — only MCP protocol on stdout
+        port=embedded_port,
+        log_level="error",
         access_log=False,
+        log_config=None,
     )
     http_server = uvicorn.Server(http_config)
 
