@@ -19,7 +19,6 @@ settings:
   # Network — where the daemon binds. 127.0.0.1 only; not exposed to LAN.
   network:
     http_port: 7070            # FastAPI REST API
-    mcp_port: 7071             # FastMCP SSE server (agents connect here)
     host: 127.0.0.1            # do not change unless you know what you're doing
 
   # Storage — where chronos persists state on disk.

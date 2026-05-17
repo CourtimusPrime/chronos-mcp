@@ -113,7 +113,7 @@ Google Cloud Console Setup (Web Application)
 6. chronos --add <alias>     (opens browser for consent)
 7a. Add to .mcp.json for agents (recommended):
     { "mcpServers": { "chronos": { "command": "chronos", "args": ["--mcp-stdio"] } } }
-7b. chronos --start          (daemon mode: HTTP API + SSE MCP + background sync)
+7b. chronos --start          (daemon mode: HTTP API + background sync)
 
 Tip: --mcp-stdio starts an embedded stack (no separate daemon needed).
      Ctrl+C while --start is running wipes synced data but keeps accounts.
@@ -380,7 +380,6 @@ def _cmd_add(alias: str, db_path: str | None) -> None:
 @click.option("--status", "show_status", is_flag=True, help="Show sync status")
 @click.option("--sync", "sync_alias", metavar="[ALIAS]", default=None, help="Trigger sync")
 @click.option("--http-port", default=None, type=int, help="HTTP API port (default: 7070)")
-@click.option("--mcp-port", default=None, type=int, help="MCP server port (default: 7071)")
 @click.option("--db-path", default=None, help="Override CHRONOS_DB_PATH")
 @click.option("--type", "sync_type", default="incremental", type=click.Choice(["full", "incremental"]), help="Sync type")
 @click.pass_context
@@ -398,7 +397,6 @@ def cli(
     show_status,
     sync_alias,
     http_port,
-    mcp_port,
     db_path,
     sync_type,
 ):
@@ -436,7 +434,7 @@ def cli(
         conn.close()
 
     elif start_daemon:
-        _cmd_start(http_port, mcp_port, db_path)
+        _cmd_start(http_port, db_path)
 
     elif stop_daemon:
         _cmd_stop()
@@ -633,16 +631,11 @@ async def _run_mcp_stdio(db_path: str | None, http_port: int) -> None:
     )
 
 
-def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None) -> None:
+def _cmd_start(http_port: int | None, db_path: str | None) -> None:
     """Start the Chronos daemon (blocks until SIGINT/SIGTERM)."""
     import asyncio
-    from chronos.sync.engine import SyncEngine
-    from chronos.api.app import create_app
-    from chronos.mcp.server import create_mcp_server
-
     from chronos.config import get as _cfg
     _http_port = http_port or int(os.environ.get("CHRONOS_HTTP_PORT", _cfg("network.http_port", 7070)))
-    _mcp_port = mcp_port or int(os.environ.get("CHRONOS_MCP_PORT", _cfg("network.mcp_port", 7071)))
 
     # Write PID file
     pid_file = _get_pid_file()
@@ -651,13 +644,12 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
 
     console.print(f"[bold green]Starting Chronos daemon...[/bold green]")
     console.print(f"  HTTP API:  http://127.0.0.1:{_http_port}")
-    console.print(f"  MCP (SSE): http://127.0.0.1:{_mcp_port}/sse")
-    console.print(f"  MCP (stdio): chronos --mcp-stdio  [dim](recommended for Claude Code / agent subprocesses)[/dim]")
+    console.print(f"  MCP (stdio): chronos --mcp-stdio  [dim](use in .mcp.json for Claude Code)[/dim]")
     console.print("[yellow]Tip: Ctrl+C will wipe synced data. Use 'chronos --stop' for a clean shutdown.[/yellow]")
 
     interrupted = False
     try:
-        asyncio.run(_run_daemon(db_path, _http_port, _mcp_port))
+        asyncio.run(_run_daemon(db_path, _http_port))
     except KeyboardInterrupt:
         interrupted = True
         console.print("\n[yellow]Ctrl+C received — wiping synced data (accounts preserved)…[/yellow]")
@@ -668,14 +660,13 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
             pid_file.unlink()
 
 
-async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> None:
+async def _run_daemon(db_path: str | None, http_port: int) -> None:
     """Async entrypoint for the daemon."""
     import uvicorn
     from chronos.db.connection import get_connection
     from chronos.db.migrations import apply_migrations
     from chronos.sync.engine import SyncEngine
     from chronos.api.app import create_app
-    from chronos.mcp.server import create_mcp_server
 
     # Open DB and apply migrations
     conn = get_connection(db_path)
@@ -684,15 +675,9 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
     # Create FastAPI app
     app = create_app(db_path)
 
-    # Create MCP server
-    mcp_app = create_mcp_server(http_port)
-
     # Create sync engine
     sync_engine = SyncEngine(db_path)
 
-    # Silence loggers AFTER MCP server creation — FastMCP installs a RichHandler
-    # via logging.basicConfig the first time create_mcp_server() runs, so we must
-    # call this AFTER mcp_app is built to win the race.
     _setup_logging_for_live()
 
     # stop_event used by _live_progress to exit on orderly shutdown
@@ -709,23 +694,11 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
     )
     http_server = uvicorn.Server(http_config)
 
-    # Configure uvicorn for MCP SSE server
-    mcp_config = uvicorn.Config(
-        mcp_app,
-        host="127.0.0.1",
-        port=mcp_port,
-        log_level="critical",
-        access_log=False,
-        log_config=None,
-    )
-    mcp_server = uvicorn.Server(mcp_config)
-
     conn.close()
 
-    # Run all components concurrently (4th arg: live progress display)
+    # Run all components concurrently
     await asyncio.gather(
         http_server.serve(),
-        mcp_server.serve(),
         sync_engine.run(),
         _live_progress(sync_engine, db_path, stop_event),
     )

@@ -136,20 +136,11 @@ def test_live_progress_snapshot_renders_table(db_path):
 
 
 def test_no_http_access_log_in_uvicorn_config(db_path):
-    """Both uvicorn configs in _run_daemon set access_log=False and log_config=None."""
+    """The HTTP uvicorn config in _run_daemon sets access_log=False and log_config=None."""
     import inspect
     from chronos.cli.main import _run_daemon
 
     src = inspect.getsource(_run_daemon)
 
-    # access_log=False must appear at least twice
-    assert src.count("access_log=False") >= 2, (
-        "Expected access_log=False on both HTTP and MCP uvicorn.Config blocks, "
-        f"found {src.count('access_log=False')} occurrence(s)"
-    )
-
-    # log_config=None must appear at least twice
-    assert src.count("log_config=None") >= 2, (
-        "Expected log_config=None on both HTTP and MCP uvicorn.Config blocks, "
-        f"found {src.count('log_config=None')} occurrence(s)"
-    )
+    assert "access_log=False" in src, "Expected access_log=False on HTTP uvicorn.Config"
+    assert "log_config=None" in src, "Expected log_config=None on HTTP uvicorn.Config"

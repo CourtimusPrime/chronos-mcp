@@ -23,7 +23,7 @@ import yaml
 PACKAGE_TEMPLATE = "config.yml"  # ships inside the chronos package via package-data
 
 _DEFAULTS: dict[str, Any] = {
-    "network": {"http_port": 7070, "mcp_port": 7071, "host": "127.0.0.1"},
+    "network": {"http_port": 7070, "host": "127.0.0.1"},
     "storage": {"home": "~/.chronos", "db_path": None},
     "logging": {"level": "critical", "show_uvicorn": False},
     "sync": {
