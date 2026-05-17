@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS messages (
   provider_message_id TEXT    NOT NULL,
   subject             TEXT,
   from_address        TEXT    NOT NULL,
+  from_name           TEXT,
   to_addresses        TEXT    NOT NULL,
   cc_addresses        TEXT,
   bcc_addresses       TEXT,

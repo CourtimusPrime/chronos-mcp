@@ -485,6 +485,7 @@ class GmailWorker:
 
         subject = _get_header(headers, "Subject")
         from_address = _get_header(headers, "From") or ""
+        from_name, _ = email.utils.parseaddr(from_address)
         to_raw = _get_header(headers, "To") or ""
         cc_raw = _get_header(headers, "Cc")
         bcc_raw = _get_header(headers, "Bcc")
@@ -543,17 +544,17 @@ class GmailWorker:
             conn.execute(
                 """
                 UPDATE messages SET
-                    thread_id = ?, subject = ?, from_address = ?, to_addresses = ?,
-                    cc_addresses = ?, bcc_addresses = ?, date_unix = ?, body_text = ?,
-                    body_html = ?, labels = ?, has_attachments = ?, attachment_names = ?,
-                    in_reply_to = ?, references_header = ?, sync_state = 'synced',
-                    provider_raw = ?
+                    thread_id = ?, subject = ?, from_address = ?, from_name = ?,
+                    to_addresses = ?, cc_addresses = ?, bcc_addresses = ?, date_unix = ?,
+                    body_text = ?, body_html = ?, labels = ?, has_attachments = ?,
+                    attachment_names = ?, in_reply_to = ?, references_header = ?,
+                    sync_state = 'synced', provider_raw = ?
                 WHERE id = ?
                 """,
                 (
-                    internal_thread_id, subject, from_address, to_addresses,
-                    cc_addresses, bcc_addresses, date_unix, body_text,
-                    body_html, labels, has_attachments, attachment_names_json,
+                    internal_thread_id, subject, from_address, from_name,
+                    to_addresses, cc_addresses, bcc_addresses, date_unix,
+                    body_text, body_html, labels, has_attachments, attachment_names_json,
                     in_reply_to, references_header, json.dumps(msg_data),
                     existing["id"],
                 ),
@@ -564,15 +565,15 @@ class GmailWorker:
                 """
                 INSERT INTO messages (
                     id, account_id, thread_id, provider_message_id, subject,
-                    from_address, to_addresses, cc_addresses, bcc_addresses, date_unix,
-                    body_text, body_html, labels, has_attachments, attachment_names,
+                    from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
+                    date_unix, body_text, body_html, labels, has_attachments, attachment_names,
                     in_reply_to, references_header, sync_state, created_at, provider_raw
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?)
                 """,
                 (
                     msg_id, self.account_id, internal_thread_id, provider_message_id, subject,
-                    from_address, to_addresses, cc_addresses, bcc_addresses, date_unix,
-                    body_text, body_html, labels, has_attachments, attachment_names_json,
+                    from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
+                    date_unix, body_text, body_html, labels, has_attachments, attachment_names_json,
                     in_reply_to, references_header, now_ms, json.dumps(msg_data),
                 ),
             )

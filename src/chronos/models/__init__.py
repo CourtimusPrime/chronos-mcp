@@ -40,6 +40,7 @@ class Message:
     provider_message_id: str
     subject: Optional[str]
     from_address: str
+    from_name: Optional[str]
     to_addresses: str  # JSON list
     cc_addresses: Optional[str]  # JSON list
     bcc_addresses: Optional[str]  # JSON list
