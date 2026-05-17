@@ -1,6 +1,7 @@
 """Click CLI: --add, --remove, --list, --test, --start, --stop, --status, --sync."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import signal
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.live import Live
 from rich.table import Table
 
 console = Console()
@@ -45,6 +47,26 @@ def _format_last_synced(last_synced_at: int | None) -> str:
         return f"{minutes} minutes ago"
     hours = minutes // 60
     return f"{hours} hours ago"
+
+
+def _wipe_synced_data(db_path: str | None) -> None:
+    """Delete all synced rows from the six data tables and reset account cursors.
+
+    Uses get_connection directly (not _get_conn) to skip migrations on teardown.
+    Accounts and token files are preserved.
+    """
+    from chronos.db.connection import get_connection
+
+    conn = get_connection(db_path)
+    try:
+        for table in ("messages", "threads", "events", "calendars",
+                      "pending_changes", "sync_log"):
+            conn.execute(f"DELETE FROM {table}")
+        conn.execute("UPDATE accounts SET sync_cursor = NULL, last_synced_at = NULL")
+        conn.commit()
+        console.print("[green]✓ Wiped synced data.[/green]")
+    finally:
+        conn.close()
 
 
 @click.group(invoke_without_command=True)
@@ -237,10 +259,17 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
     console.print(f"[bold green]Starting Chronos daemon...[/bold green]")
     console.print(f"  HTTP API:  http://127.0.0.1:{_http_port}")
     console.print(f"  MCP:       http://127.0.0.1:{_mcp_port}/sse")
+    console.print("[yellow]Tip: Ctrl+C will wipe synced data. Use 'chronos --stop' for a clean shutdown.[/yellow]")
 
+    interrupted = False
     try:
         asyncio.run(_run_daemon(db_path, _http_port, _mcp_port))
+    except KeyboardInterrupt:
+        interrupted = True
+        console.print("\n[yellow]Ctrl+C received — wiping synced data (accounts preserved)…[/yellow]")
     finally:
+        if interrupted:
+            _wipe_synced_data(db_path)
         if pid_file.exists():
             pid_file.unlink()
 
