@@ -4,9 +4,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import email.utils
+import html as html_mod
 import json
 import logging
+import re
 import time
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
@@ -111,6 +114,52 @@ def _decode_base64url(data: str) -> str:
     return decoded.decode("utf-8", errors="replace")
 
 
+class _HTMLTextExtractor(HTMLParser):
+    _BLOCK_TAGS = frozenset({"p", "br", "div", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote"})
+    _SKIP_TAGS = frozenset({"script", "style", "head"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip_depth += 1
+        elif tag in self._BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0:
+            self._parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self._skip_depth == 0:
+            self._parts.append(html_mod.unescape(f"&{name};"))
+
+    def handle_charref(self, name: str) -> None:
+        if self._skip_depth == 0:
+            self._parts.append(html_mod.unescape(f"&#{name};"))
+
+
+def _strip_html(raw: str) -> str:
+    """Convert HTML to clean plain text."""
+    extractor = _HTMLTextExtractor()
+    extractor.feed(raw)
+    text = "".join(extractor._parts)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _looks_like_html(text: str) -> bool:
+    stripped = text.lstrip()
+    return stripped.startswith("<") and bool(re.search(r"<(html|head|body|div|table|span|p)\b", stripped[:500], re.I))
+
+
 def _extract_body(payload: dict) -> tuple[Optional[str], Optional[str]]:
     """Extract plain text and HTML body from message payload."""
     body_text = None
@@ -130,6 +179,13 @@ def _extract_body(payload: dict) -> tuple[Optional[str], Optional[str]]:
                 body_text = pt
             if ph and not body_html:
                 body_html = ph
+
+    # Derive clean plain text from HTML when no text/plain part exists,
+    # or when the sender mislabeled an HTML payload as text/plain.
+    if body_text and _looks_like_html(body_text):
+        body_text = _strip_html(body_text)
+    if not body_text and body_html:
+        body_text = _strip_html(body_html)
 
     return body_text, body_html
 
