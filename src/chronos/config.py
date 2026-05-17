@@ -5,17 +5,22 @@ Resolution order (highest precedence wins):
 
 Discovery order for config.yml:
   1. $CHRONOS_CONFIG
-  2. ./config.yml          (repo-local / dev)
-  3. ~/.chronos/config.yml (user-level)
+  2. ./config.yml                       (repo-local / dev)
+  3. ~/.chronos/config.yml              (user-level; auto-created on first run)
+  4. <package>/config.yml               (bundled template, read-only)
 """
 from __future__ import annotations
 
 import os
+import shutil
 from functools import lru_cache
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+PACKAGE_TEMPLATE = "config.yml"  # ships inside the chronos package via package-data
 
 _DEFAULTS: dict[str, Any] = {
     "network": {"http_port": 7070, "mcp_port": 7071, "host": "127.0.0.1"},
@@ -41,6 +46,36 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 
+def _bundled_template_path() -> Path | None:
+    """Return the package-bundled config.yml path, or None if not found."""
+    try:
+        with resources.as_file(resources.files("chronos") / PACKAGE_TEMPLATE) as p:
+            if p.exists():
+                return Path(p)
+    except (FileNotFoundError, ModuleNotFoundError, AttributeError):
+        pass
+    return None
+
+
+def ensure_user_config() -> Path | None:
+    """Materialize ~/.chronos/config.yml from the bundled template if missing.
+
+    Called on first daemon start so the user has a file they can edit. Safe to
+    call repeatedly; only writes when the destination doesn't exist.
+    Returns the user config path on success, or None if no template available.
+    """
+    home = Path(os.environ.get("CHRONOS_HOME", "~/.chronos")).expanduser()
+    dest = home / "config.yml"
+    if dest.exists():
+        return dest
+    tmpl = _bundled_template_path()
+    if tmpl is None or not tmpl.exists():
+        return None
+    home.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(tmpl, dest)
+    return dest
+
+
 def _discover_config_path() -> Path | None:
     explicit = os.environ.get("CHRONOS_CONFIG")
     if explicit:
@@ -52,7 +87,7 @@ def _discover_config_path() -> Path | None:
     home_config = Path(os.environ.get("CHRONOS_HOME", "~/.chronos")).expanduser() / "config.yml"
     if home_config.exists():
         return home_config
-    return None
+    return _bundled_template_path()
 
 
 def _deep_merge(base: dict, overlay: dict) -> dict:

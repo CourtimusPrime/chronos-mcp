@@ -514,7 +514,10 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
     from chronos.api.app import create_app
     from chronos.mcp.server import create_mcp_server
 
-    from chronos.config import get as _cfg
+    from chronos.config import ensure_user_config, get as _cfg, reset_cache as _reset_cfg
+    written = ensure_user_config()
+    if written is not None and written.stat().st_size > 0:
+        _reset_cfg()  # pick up the freshly materialized file on first run
     _http_port = http_port or int(os.environ.get("CHRONOS_HTTP_PORT", _cfg("network.http_port", 7070)))
     _mcp_port = mcp_port or int(os.environ.get("CHRONOS_MCP_PORT", _cfg("network.mcp_port", 7071)))
 
