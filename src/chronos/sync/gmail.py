@@ -370,6 +370,11 @@ class GmailWorker:
                             d["message"]["id"] for d in history_item.get("messagesDeleted", [])
                         )
 
+                    # Only flip to "running" when there's real work — silent polls
+                    # leave the display at ✓ done
+                    if added_ids or deleted_ids:
+                        self._current_sync_state = "running"
+
                     # Stream completions so SYNCED ticks up smoothly
                     if added_ids:
                         tasks = [
@@ -619,7 +624,9 @@ class GmailWorker:
 
         while self._running:
             try:
-                self._current_sync_state = "running"
+                # Don't preemptively flip to "running" — incremental_sync flips it
+                # only when actual new messages are being fetched. Otherwise the
+                # display stays at ✓ done during the 60s polling cycle.
                 await self._process_pending_changes()
                 await self.incremental_sync()
                 self._current_sync_state = "idle"

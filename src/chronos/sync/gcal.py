@@ -253,7 +253,12 @@ class CalendarWorker:
                             continue
                         raise
 
-                    for event in events_data.get("items", []):
+                    items = events_data.get("items", [])
+                    if items:
+                        # Only flip to "running" when there's real work — silent
+                        # polls leave the display at ✓ done
+                        self._current_sync_state = "running"
+                    for event in items:
                         if event.get("status") == "cancelled":
                             await asyncio.to_thread(
                                 self._delete_event, conn, event["id"]
@@ -714,7 +719,9 @@ class CalendarWorker:
 
         while self._running:
             try:
-                self._current_sync_state = "running"
+                # Don't preemptively flip to "running" — incremental_sync flips
+                # only when actual new events are being fetched. Otherwise the
+                # display stays at ✓ done during the 60s polling cycle.
                 await self._process_pending_changes()
                 await self.incremental_sync()
                 self._current_sync_state = "idle"
