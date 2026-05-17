@@ -75,8 +75,9 @@ def list_messages(
         params.append(account_id)
 
     if from_address:
-        conditions.append("m.from_address = ?")
-        params.append(from_address)
+        # from_address stores the raw From header: "Name <addr>" or bare "addr"
+        conditions.append("m.from_address LIKE ?")
+        params.append(f"%{from_address}%")
 
     if label:
         conditions.append("m.labels LIKE ?")

@@ -73,7 +73,7 @@ def _build_mcp(http_port: int = 7070) -> FastMCP:
             q: Full-text search query. Searches subject, body, and from_address.
                Supports FTS5 MATCH syntax (e.g. "meeting budget", meeting AND budget).
             account_id: Limit to one account by its ID.
-            from_address: Exact sender address match.
+            from_address: Sender address filter (substring match — works with bare addresses and "Name <addr>" format).
             label: Return only messages that contain this label (e.g. "INBOX", "UNREAD").
             after: Unix milliseconds lower bound on message date.
             before: Unix milliseconds upper bound on message date.
