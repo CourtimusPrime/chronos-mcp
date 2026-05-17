@@ -9,6 +9,15 @@ from chronos.db.migrations import apply_migrations
 
 
 @pytest.fixture
+def tmp_chronos_home(tmp_path, monkeypatch):
+    """Monkeypatch CHRONOS_HOME to a tmp_path directory and yield the Path."""
+    chronos_home = tmp_path / "chronos_home"
+    chronos_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CHRONOS_HOME", str(chronos_home))
+    yield chronos_home
+
+
+@pytest.fixture
 def db_conn(tmp_path):
     """Create a temporary SQLite connection for testing."""
     db_path = str(tmp_path / "test.db")
