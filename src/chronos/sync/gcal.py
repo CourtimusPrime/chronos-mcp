@@ -698,6 +698,8 @@ class CalendarWorker:
     async def run(self) -> None:
         """Main sync loop for this calendar account."""
         self._running = True
+        # Signal to the live display that the worker is up (see gmail.run() comment)
+        self._current_sync_state = "ready"
         polling_interval = 60
 
         conn = self._get_conn()
@@ -712,7 +714,7 @@ class CalendarWorker:
             try:
                 self._current_sync_state = "running"
                 await self.full_sync()
-                self._current_sync_state = "idle"
+                self._current_sync_state = "ready"
             except Exception as e:
                 logger.error("Initial full Calendar sync failed for %s: %s", self.email, e)
                 self._current_sync_state = "error"
@@ -724,7 +726,7 @@ class CalendarWorker:
                 # display stays at ✓ done during the 60s polling cycle.
                 await self._process_pending_changes()
                 await self.incremental_sync()
-                self._current_sync_state = "idle"
+                self._current_sync_state = "ready"
             except Exception as e:
                 logger.error("Calendar sync loop error for %s: %s", self.email, e)
                 self._current_sync_state = "error"

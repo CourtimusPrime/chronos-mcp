@@ -602,6 +602,10 @@ class GmailWorker:
     async def run(self) -> None:
         """Main sync loop for this account (PRD §7.1)."""
         self._running = True
+        # Signal to the live display that the worker is up. "ready" maps to ✓ done
+        # in _state_cell but distinguishes us from a freshly-constructed "idle"
+        # worker that hasn't entered its run loop yet.
+        self._current_sync_state = "ready"
         polling_interval = 60  # seconds
 
         # Check if we need a full sync first
@@ -617,7 +621,7 @@ class GmailWorker:
             try:
                 self._current_sync_state = "running"
                 await self.full_sync()
-                self._current_sync_state = "idle"
+                self._current_sync_state = "ready"
             except Exception as e:
                 logger.error("Initial full sync failed for %s: %s", self.email, e)
                 self._current_sync_state = "error"
@@ -629,7 +633,7 @@ class GmailWorker:
                 # display stays at ✓ done during the 60s polling cycle.
                 await self._process_pending_changes()
                 await self.incremental_sync()
-                self._current_sync_state = "idle"
+                self._current_sync_state = "ready"
             except Exception as e:
                 logger.error("Sync loop error for Gmail %s: %s", self.email, e)
                 self._current_sync_state = "error"
