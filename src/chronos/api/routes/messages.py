@@ -17,8 +17,12 @@ from chronos.api.errors import (
 router = APIRouter()
 
 
+_SNIPPET_LEN = 300
+
+
 def _message_to_dict(row: sqlite3.Row, include_full: bool = False) -> dict:
-    """Serialize message row."""
+    """Serialize message row. List mode returns a body snippet; full mode returns the complete body."""
+    body = row["body_text"]
     d = {
         "id": row["id"],
         "account_id": row["account_id"],
@@ -32,7 +36,7 @@ def _message_to_dict(row: sqlite3.Row, include_full: bool = False) -> dict:
         "cc_addresses": json.loads(row["cc_addresses"]) if row["cc_addresses"] else None,
         "bcc_addresses": json.loads(row["bcc_addresses"]) if row["bcc_addresses"] else None,
         "date_unix": row["date_unix"],
-        "body_text": row["body_text"],
+        "body_snippet": (body[:_SNIPPET_LEN] + "…") if body and len(body) > _SNIPPET_LEN else body,
         "labels": json.loads(row["labels"]) if row["labels"] else [],
         "has_attachments": bool(row["has_attachments"]),
         "attachment_names": json.loads(row["attachment_names"]) if row["attachment_names"] else None,
@@ -42,6 +46,7 @@ def _message_to_dict(row: sqlite3.Row, include_full: bool = False) -> dict:
         "created_at": row["created_at"],
     }
     if include_full:
+        d["body_text"] = body
         d["body_html"] = row["body_html"]
         d["provider_raw"] = row["provider_raw"]
     return d

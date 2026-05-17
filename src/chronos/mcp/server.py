@@ -64,10 +64,15 @@ def _build_mcp(http_port: int = 7070) -> FastMCP:
         before: Optional[int] = None,
         thread_id: Optional[str] = None,
         has_attachments: Optional[bool] = None,
-        limit: int = 50,
+        limit: int = 20,
         offset: int = 0,
     ) -> dict:
         """Search email messages with optional full-text and structured filters.
+
+        Returns a list of messages with metadata and a 300-character body_snippet.
+        To read the full body of a specific message, call get_message(id) afterward.
+        Keep limit small (10-20) when you only need to identify messages; use larger
+        limits only when you need to scan many results.
 
         Args:
             q: Full-text search query. Searches subject, body, and from_address.
@@ -83,7 +88,7 @@ def _build_mcp(http_port: int = 7070) -> FastMCP:
             offset: Pagination offset. Default 0.
 
         Returns:
-            Paginated list of message objects (no body_html, no provider_raw).
+            Paginated list of message objects with body_snippet (truncated). No body_html or provider_raw.
         """
         params = {}
         if q is not None:
