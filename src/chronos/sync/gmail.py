@@ -22,11 +22,12 @@ GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 RATE_LIMIT_BASE = 2.0
 RATE_LIMIT_MAX = 64.0
 
-# Concurrent in-flight messages.get requests. Gmail allows 250 quota units/sec
-# per user; messages.get costs 5 units, so the per-second ceiling is ~50.
-# 10 concurrent in-flight requests with ~200ms latency = ~50/sec — right at the
-# safe edge. Tuneable via CHRONOS_GMAIL_CONCURRENCY env var if needed.
-GMAIL_FETCH_CONCURRENCY = 10
+# Concurrent in-flight messages.get requests. Sourced from config.yml
+# (settings.sync.gmail.concurrence). Gmail allows 250 quota units/sec per
+# user; messages.get costs 5 units, so 10 ≈ 50 reqs/sec safely.
+def _gmail_concurrency() -> int:
+    from chronos.config import get
+    return int(get("sync.gmail.concurrence", 10))
 
 # Gmail system labels — stored verbatim
 SYSTEM_LABELS = {
@@ -223,7 +224,7 @@ class GmailWorker:
         last_history_id = None
 
         try:
-            sem = asyncio.Semaphore(GMAIL_FETCH_CONCURRENCY)
+            sem = asyncio.Semaphore(_gmail_concurrency())
 
             async def _fetch_one(client: httpx.AsyncClient, msg_id: str) -> dict:
                 async with sem:
@@ -312,7 +313,7 @@ class GmailWorker:
         records_synced = 0
 
         try:
-            sem = asyncio.Semaphore(GMAIL_FETCH_CONCURRENCY)
+            sem = asyncio.Semaphore(_gmail_concurrency())
 
             async def _fetch_one(client: httpx.AsyncClient, msg_id: str) -> dict:
                 async with sem:

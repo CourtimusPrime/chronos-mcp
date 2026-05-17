@@ -117,8 +117,10 @@ class SyncEngine:
             await self._start_worker(dict(account))
 
         # Poll for new accounts and manage existing workers
+        from chronos.config import get as _cfg
+        poll_interval = float(_cfg("sync.poll_interval_seconds", 30))
         while self._running:
-            await asyncio.sleep(30)
+            await asyncio.sleep(poll_interval)
 
             try:
                 conn = self._get_conn()

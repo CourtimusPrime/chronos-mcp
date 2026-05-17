@@ -514,8 +514,9 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
     from chronos.api.app import create_app
     from chronos.mcp.server import create_mcp_server
 
-    _http_port = http_port or int(os.environ.get("CHRONOS_HTTP_PORT", "7070"))
-    _mcp_port = mcp_port or int(os.environ.get("CHRONOS_MCP_PORT", "7071"))
+    from chronos.config import get as _cfg
+    _http_port = http_port or int(os.environ.get("CHRONOS_HTTP_PORT", _cfg("network.http_port", 7070)))
+    _mcp_port = mcp_port or int(os.environ.get("CHRONOS_MCP_PORT", _cfg("network.mcp_port", 7071)))
 
     # Write PID file
     pid_file = _get_pid_file()

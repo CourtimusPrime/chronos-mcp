@@ -1,0 +1,66 @@
+name: chronos
+type: config-file
+
+# ---------------------------------------------------------------------------
+# Chronos configuration
+#
+# Loaded at startup. Values here override built-in defaults but are themselves
+# overridden by environment variables (CHRONOS_HTTP_PORT, CHRONOS_DB_PATH, …).
+# Resolution order:  builtin defaults  <  config.yml  <  env vars  <  CLI flags
+#
+# Discovery: chronos looks for config.yml in this order:
+#   1. $CHRONOS_CONFIG           (explicit path)
+#   2. ./config.yml              (cwd, useful in dev)
+#   3. ~/.chronos/config.yml     (user-level)
+# ---------------------------------------------------------------------------
+
+settings:
+
+  # Network — where the daemon binds. 127.0.0.1 only; not exposed to LAN.
+  network:
+    http_port: 7070            # FastAPI REST API
+    mcp_port: 7071             # FastMCP SSE server (agents connect here)
+    host: 127.0.0.1            # do not change unless you know what you're doing
+
+  # Storage — where chronos persists state on disk.
+  storage:
+    home: ~/.chronos           # token files, pid file, staged credentials
+    db_path: null              # null → ~/.chronos/chronos.db ; override to absolute path
+
+  # Logging — only affects the daemon (chronos --start). The Live status UI is
+  # never written to the log; this controls what goes to stderr if anything.
+  logging:
+    level: critical            # debug | info | warning | error | critical
+    show_uvicorn: false        # true to surface uvicorn startup/access logs
+
+  # Sync — pacing and parallelism for the background workers.
+  sync:
+    poll_interval_seconds: 30  # how often the orchestrator checks for new accounts
+    incremental_interval_seconds: 60  # delay between incremental syncs per worker
+
+    gmail:
+      concurrence: 10          # in-flight messages.get requests per account.
+                               # Gmail allows 250 quota units/sec; messages.get
+                               # costs 5, so 10 ≈ 50 reqs/sec safely. Raise to
+                               # 20-25 for faster initial sync (may hit 429).
+      page_size: 500           # messages.list maxResults (Gmail max is 500)
+      timeout_seconds: 30      # per-request HTTP timeout
+
+    calendar:
+      page_size: 250           # events.list maxResults (calendar max is 2500)
+      timeout_seconds: 30
+      lookback_days: 30        # past window for full sync
+      lookahead_days: 365      # future window for full sync
+
+  # Daemon — CLI/UX behavior for `chronos --start`.
+  daemon:
+    sigint_wipes_data: true    # Ctrl+C deletes synced data (preserves accounts)
+                               # Set false to make Ctrl+C behave like --stop.
+    show_welcome_on_first_run: true  # styled setup panel when no accounts exist
+    progress_refresh_hz: 4     # Live status board refresh rate (frames/sec)
+
+  # Rate limiting — backoff behavior when Google returns 429 / 503.
+  rate_limit:
+    base_seconds: 2.0          # first retry waits this long
+    max_seconds: 64.0          # cap on exponential backoff
+    jitter_pct: 20             # ±% randomization to avoid thundering herd
