@@ -24,14 +24,53 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
-REDIRECT_URI = "http://localhost:9004/callback"
-CALLBACK_PORT = 9004
 
 SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.modify",
+    "https://mail.google.com/",
     "https://www.googleapis.com/auth/calendar",
 ]
+
+# Legacy scopes that indicate a pre-05.2 token written with read+modify only.
+_LEGACY_GMAIL_SCOPES = {
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+}
+_NEW_GMAIL_SCOPE = "https://mail.google.com/"
+
+
+def _oauth_callback() -> tuple[int, str]:
+    """Return (callback_port, callback_path) from config."""
+    from chronos.config import get as _cfg
+    port = int(_cfg("oauth.callback_port", 9004))
+    path = str(_cfg("oauth.callback_path", "/callback"))
+    if not path.startswith("/"):
+        path = "/" + path
+    return port, path
+
+
+def _redirect_uri() -> str:
+    port, path = _oauth_callback()
+    return f"http://localhost:{port}{path}"
+
+
+def _check_token_scopes(token_data: dict, token_file: Path) -> None:
+    """Raise SystemExit if token was written with the legacy Gmail scope pair.
+
+    Legacy = missing mail.google.com AND contains gmail.readonly or gmail.modify.
+    Forces the operator to re-authenticate against the new Web App OAuth client.
+    """
+    scopes = token_data.get("scopes") or []
+    scopes_set = set(scopes)
+    if _NEW_GMAIL_SCOPE in scopes_set:
+        return
+    if scopes_set & _LEGACY_GMAIL_SCOPES:
+        alias = token_file.stem.removesuffix("_token")
+        raise SystemExit(
+            f"Token file ~/.chronos/{alias}_token.json was created with the "
+            f"old scope set (gmail.readonly + gmail.modify). Re-authenticate "
+            f"to grant the new scope: chronos --use <web_creds.json> && "
+            f"chronos --add {alias}."
+        )
 
 
 def _generate_pkce() -> tuple[str, str]:
@@ -77,12 +116,14 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         pass  # suppress default HTTP server logging
 
 
-def _wait_for_callback(timeout: int = 300) -> tuple[Optional[str], Optional[str]]:
+def _wait_for_callback(
+    callback_port: int, timeout: int = 300
+) -> tuple[Optional[str], Optional[str]]:
     """Start local HTTP server and wait for OAuth2 callback."""
     _CallbackHandler.auth_code = None
     _CallbackHandler.error = None
 
-    server = HTTPServer(("localhost", CALLBACK_PORT), _CallbackHandler)
+    server = HTTPServer(("localhost", callback_port), _CallbackHandler)
     server.timeout = 1.0
 
     deadline = time.time() + timeout
@@ -101,13 +142,13 @@ def run_oauth_flow(
     conn: sqlite3.Connection,
 ) -> None:
     """
-    Execute the full OAuth2 PKCE flow for Google.
+    Execute the full OAuth2 PKCE flow for Google (Web Application client).
 
-    Steps (from PRD §10.1):
-    1. Read credentials JSON (expect 'installed' key)
+    Steps (from PRD §10.1, updated for Phase 05.2):
+    1. Read credentials JSON (expect 'web' key — Web Application OAuth client)
     2. Generate PKCE code_verifier/challenge
-    3. Open browser to consent URL
-    4. Listen on localhost:9004 for callback
+    3. Open browser to consent URL (redirect_uri from oauth.callback_port config)
+    4. Listen on localhost:<callback_port> for callback
     5. Exchange code for tokens
     6. Error if no refresh_token
     7. Write self-contained token file
@@ -117,6 +158,9 @@ def run_oauth_flow(
     """
     from rich.console import Console
     console = Console()
+
+    callback_port, callback_path = _oauth_callback()
+    redirect_uri = f"http://localhost:{callback_port}{callback_path}"
 
     # Step 1: Read credentials JSON
     creds_path = Path(credentials_path)
@@ -128,16 +172,22 @@ def run_oauth_flow(
     except json.JSONDecodeError:
         raise SystemExit("Error: could not parse credentials file")
 
-    if "web" in creds_data:
-        raise SystemExit('Error: credentials file must use application type "Desktop app"')
+    if "installed" in creds_data:
+        raise SystemExit(
+            "Desktop App credentials are no longer supported. Create a Web "
+            "Application OAuth client in Google Cloud Console (Application "
+            f"type: Web application), add {redirect_uri} as an Authorized "
+            "redirect URI, then re-download the JSON. Run `chronos --help` "
+            "for full setup instructions."
+        )
 
-    if "installed" not in creds_data:
+    if "web" not in creds_data:
         raise SystemExit("Error: could not parse credentials file")
 
-    installed = creds_data["installed"]
-    client_id = installed["client_id"]
-    client_secret = installed["client_secret"]
-    token_uri = installed.get("token_uri", GOOGLE_TOKEN_URI)
+    web = creds_data["web"]
+    client_id = web["client_id"]
+    client_secret = web["client_secret"]
+    token_uri = web.get("token_uri", GOOGLE_TOKEN_URI)
 
     # Check alias not already registered
     existing = conn.execute(
@@ -155,7 +205,7 @@ def run_oauth_flow(
     state = secrets.token_urlsafe(16)
     auth_params = {
         "client_id": client_id,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
@@ -171,8 +221,8 @@ def run_oauth_flow(
     webbrowser.open(auth_url)
 
     # Step 4: Wait for callback
-    console.print("[dim]Waiting for OAuth2 callback on localhost:9004...[/dim]")
-    auth_code, error = _wait_for_callback()
+    console.print(f"[dim]Waiting for OAuth2 callback on localhost:{callback_port}...[/dim]")
+    auth_code, error = _wait_for_callback(callback_port)
 
     if error:
         raise SystemExit("Error: Google OAuth consent was declined")
@@ -185,7 +235,7 @@ def run_oauth_flow(
         "code": auth_code,
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "grant_type": "authorization_code",
         "code_verifier": code_verifier,
     }
@@ -320,6 +370,7 @@ def test_account(alias: str, conn: sqlite3.Connection) -> None:
         raise SystemExit(f"Error: token file not found for alias '{alias}'")
 
     token_data = json.loads(token_file.read_text())
+    _check_token_scopes(token_data, token_file)
     access_token = _ensure_valid_token(token_data, token_file)
 
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -361,7 +412,14 @@ def test_account(alias: str, conn: sqlite3.Connection) -> None:
 
 
 def _ensure_valid_token(token_data: dict, token_file: Path) -> str:
-    """Return a valid access token, refreshing if needed."""
+    """Return a valid access token, refreshing if needed.
+
+    Also gates legacy-scope tokens written before the 05.2 migration:
+    tokens missing https://mail.google.com/ but containing the old
+    gmail.readonly/gmail.modify pair are rejected with a migration hint.
+    """
+    _check_token_scopes(token_data, token_file)
+
     expiry = token_data.get("token_expiry_unix", 0)
     now_ms = int(time.time() * 1000)
 
