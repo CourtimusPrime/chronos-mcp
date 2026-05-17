@@ -808,6 +808,7 @@ async def _run_mcp_stdio(db_path: str | None, http_port: int | None) -> None:
         http_server.serve(),
         sync_engine.run(),
         mcp.run_stdio_async(),
+        _watch_config(),
     )
 
 
@@ -838,6 +839,26 @@ def _cmd_start(http_port: int | None, db_path: str | None) -> None:
             _wipe_synced_data(db_path)
         if pid_file.exists():
             pid_file.unlink()
+
+
+async def _watch_config() -> None:
+    """Poll ~/.chronos/config.yml every 5 s; clear config cache on change."""
+    from chronos.config import reset_cache as _reset_cfg
+    config_path = _get_chronos_home() / "config.yml"
+    try:
+        last_mtime = config_path.stat().st_mtime
+    except OSError:
+        last_mtime = None
+    while True:
+        await asyncio.sleep(5)
+        try:
+            mtime = config_path.stat().st_mtime
+            if mtime != last_mtime:
+                last_mtime = mtime
+                _reset_cfg()
+                logger.info("config.yml changed — configuration reloaded")
+        except OSError:
+            pass
 
 
 async def _run_daemon(db_path: str | None, http_port: int) -> None:
@@ -881,6 +902,7 @@ async def _run_daemon(db_path: str | None, http_port: int) -> None:
         http_server.serve(),
         sync_engine.run(),
         _live_progress(sync_engine, db_path, stop_event),
+        _watch_config(),
     )
 
 

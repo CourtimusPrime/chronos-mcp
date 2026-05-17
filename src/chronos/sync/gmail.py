@@ -672,8 +672,6 @@ class GmailWorker:
         # in _state_cell but distinguishes us from a freshly-constructed "idle"
         # worker that hasn't entered its run loop yet.
         self._current_sync_state = "ready"
-        from chronos.config import get as _cfg
-        polling_interval = float(_cfg("sync.incremental_interval_seconds", 300))
 
         # Check if we need a full sync first
         conn = self._get_conn()
@@ -705,7 +703,8 @@ class GmailWorker:
                 logger.error("Sync loop error for Gmail %s: %s", self.email, e)
                 self._current_sync_state = "error"
 
-            await asyncio.sleep(polling_interval)
+            from chronos.config import get as _cfg
+            await asyncio.sleep(float(_cfg("sync.incremental_interval_seconds", 300)))
 
     async def _process_pending_changes(self) -> None:
         """Process pending changes before fetching provider data (PRD §7.4)."""

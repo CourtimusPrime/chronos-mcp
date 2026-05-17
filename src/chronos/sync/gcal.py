@@ -700,9 +700,6 @@ class CalendarWorker:
         self._running = True
         # Signal to the live display that the worker is up (see gmail.run() comment)
         self._current_sync_state = "ready"
-        from chronos.config import get as _cfg
-        polling_interval = float(_cfg("sync.incremental_interval_seconds", 300))
-
         conn = self._get_conn()
         row = conn.execute(
             "SELECT sync_cursor FROM accounts WHERE id = ?", (self.account_id,)
@@ -732,7 +729,8 @@ class CalendarWorker:
                 logger.error("Calendar sync loop error for %s: %s", self.email, e)
                 self._current_sync_state = "error"
 
-            await asyncio.sleep(polling_interval)
+            from chronos.config import get as _cfg
+            await asyncio.sleep(float(_cfg("sync.incremental_interval_seconds", 300)))
 
     def stop(self) -> None:
         self._running = False
