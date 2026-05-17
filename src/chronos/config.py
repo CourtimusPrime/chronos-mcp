@@ -24,7 +24,7 @@ _DEFAULTS: dict[str, Any] = {
     "sync": {
         "poll_interval_seconds": 30,
         "incremental_interval_seconds": 60,
-        "gmail": {"concurrence": 10, "page_size": 500, "timeout_seconds": 30},
+        "gmail": {"concurrence": 10, "page_size": 100, "timeout_seconds": 30},
         "calendar": {
             "page_size": 250,
             "timeout_seconds": 30,

@@ -29,6 +29,12 @@ def _gmail_concurrency() -> int:
     from chronos.config import get
     return int(get("sync.gmail.concurrence", 10))
 
+
+def _gmail_page_size() -> int:
+    """messages.list page size. Smaller = smoother progress, more list calls."""
+    from chronos.config import get
+    return int(get("sync.gmail.page_size", 100))
+
 # Gmail system labels — stored verbatim
 SYSTEM_LABELS = {
     "INBOX", "UNREAD", "STARRED", "SENT", "DRAFT", "SPAM", "TRASH",
@@ -234,11 +240,12 @@ class GmailWorker:
                         {"format": "full"},
                     )
 
+            page_size = _gmail_page_size()
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Get all message IDs
                 page_token = None
                 while True:
-                    params = {"maxResults": 500}
+                    params = {"maxResults": page_size}
                     if page_token:
                         params["pageToken"] = page_token
 
@@ -247,16 +254,17 @@ class GmailWorker:
                     )
                     messages = data.get("messages", [])
 
-                    # Fetch all messages on this page concurrently (bounded by sem)
-                    fetched = await asyncio.gather(
-                        *(_fetch_one(client, m["id"]) for m in messages),
-                        return_exceptions=True,
-                    )
-
-                    # Upsert sequentially (single SQLite connection, no contention)
-                    for msg_data in fetched:
-                        if isinstance(msg_data, Exception):
-                            logger.warning("Failed to fetch message: %s", msg_data)
+                    # Stream completions so the SYNCED counter ticks up smoothly
+                    # as each fetch finishes (vs. waiting for the whole page).
+                    tasks = [
+                        asyncio.create_task(_fetch_one(client, m["id"]))
+                        for m in messages
+                    ]
+                    for fut in asyncio.as_completed(tasks):
+                        try:
+                            msg_data = await fut
+                        except Exception as e:
+                            logger.warning("Failed to fetch message: %s", e)
                             continue
                         await asyncio.to_thread(self._upsert_message, conn, msg_data)
                         records_synced += 1
@@ -327,8 +335,9 @@ class GmailWorker:
                 page_token = None
                 new_history_id = self._sync_cursor
 
+                page_size = _gmail_page_size()
                 while True:
-                    params = {"startHistoryId": self._sync_cursor, "maxResults": 500}
+                    params = {"startHistoryId": self._sync_cursor, "maxResults": page_size}
                     if page_token:
                         params["pageToken"] = page_token
 
@@ -361,15 +370,17 @@ class GmailWorker:
                             d["message"]["id"] for d in history_item.get("messagesDeleted", [])
                         )
 
-                    # Fetch all new messages concurrently
+                    # Stream completions so SYNCED ticks up smoothly
                     if added_ids:
-                        fetched = await asyncio.gather(
-                            *(_fetch_one(client, mid) for mid in added_ids),
-                            return_exceptions=True,
-                        )
-                        for msg_id, msg_data in zip(added_ids, fetched):
-                            if isinstance(msg_data, Exception):
-                                logger.warning("Failed to fetch message %s: %s", msg_id, msg_data)
+                        tasks = [
+                            asyncio.create_task(_fetch_one(client, mid))
+                            for mid in added_ids
+                        ]
+                        for fut in asyncio.as_completed(tasks):
+                            try:
+                                msg_data = await fut
+                            except Exception as e:
+                                logger.warning("Failed to fetch message: %s", e)
                                 continue
                             await asyncio.to_thread(self._upsert_message, conn, msg_data)
                             records_synced += 1
