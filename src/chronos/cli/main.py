@@ -49,6 +49,55 @@ def _format_last_synced(last_synced_at: int | None) -> str:
     return f"{hours} hours ago"
 
 
+def _progress_snapshot(sync_engine, db_path: str | None) -> Table:
+    """Build a Rich Table snapshot of the current sync state for all accounts.
+
+    Returns a Table with columns ALIAS, PROVIDER, STATE, SYNCED (right-justified).
+    For gmail accounts, SYNCED is COUNT(*) FROM messages; for others, from events.
+    """
+    from chronos.db.connection import get_connection
+
+    table = Table(title="Chronos — syncing", show_header=True, header_style="bold")
+    table.add_column("ALIAS")
+    table.add_column("PROVIDER")
+    table.add_column("STATE")
+    table.add_column("SYNCED", justify="right")
+
+    conn = get_connection(db_path)
+    try:
+        for row in conn.execute(
+            "SELECT id, display_name, provider FROM accounts ORDER BY display_name, provider"
+        ):
+            state = sync_engine.get_worker_state(row["id"])
+            if state is None:
+                state = "idle"
+            count_table = "messages" if row["provider"] == "gmail" else "events"
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM {count_table} WHERE account_id = ?",
+                (row["id"],),
+            ).fetchone()[0]
+            table.add_row(row["display_name"] or "?", row["provider"], state, f"{count:,}")
+    finally:
+        conn.close()
+
+    return table
+
+
+async def _live_progress(
+    sync_engine, db_path: str | None, stop_event: asyncio.Event
+) -> None:
+    """Async coroutine that refreshes a Rich Live table every 250ms.
+
+    Runs as the 4th coroutine inside asyncio.gather in _run_daemon.
+    Exits when stop_event is set or when KeyboardInterrupt cancels the gather.
+    """
+    with Live(_progress_snapshot(sync_engine, db_path), console=console,
+              refresh_per_second=4) as live:
+        while not stop_event.is_set():
+            await asyncio.sleep(0.25)
+            live.update(_progress_snapshot(sync_engine, db_path))
+
+
 def _wipe_synced_data(db_path: str | None) -> None:
     """Delete all synced rows from the six data tables and reset account cursors.
 
@@ -276,7 +325,6 @@ def _cmd_start(http_port: int | None, mcp_port: int | None, db_path: str | None)
 
 async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> None:
     """Async entrypoint for the daemon."""
-    import asyncio
     import uvicorn
     from chronos.db.connection import get_connection
     from chronos.db.migrations import apply_migrations
@@ -297,6 +345,9 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
     # Create sync engine
     sync_engine = SyncEngine(db_path)
 
+    # stop_event used by _live_progress to exit on orderly shutdown
+    stop_event = asyncio.Event()
+
     # Configure uvicorn for HTTP API
     http_config = uvicorn.Config(
         app,
@@ -304,6 +355,7 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
         port=http_port,
         log_level=os.environ.get("CHRONOS_LOG_LEVEL", "info").lower(),
         access_log=False,
+        log_config=None,
     )
     http_server = uvicorn.Server(http_config)
 
@@ -314,16 +366,18 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
         port=mcp_port,
         log_level=os.environ.get("CHRONOS_LOG_LEVEL", "info").lower(),
         access_log=False,
+        log_config=None,
     )
     mcp_server = uvicorn.Server(mcp_config)
 
     conn.close()
 
-    # Run all components concurrently
+    # Run all components concurrently (4th arg: live progress display)
     await asyncio.gather(
         http_server.serve(),
         mcp_server.serve(),
         sync_engine.run(),
+        _live_progress(sync_engine, db_path, stop_event),
     )
 
 
