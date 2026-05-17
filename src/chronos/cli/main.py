@@ -34,10 +34,30 @@ def _state_cell(state: str | None, tick: int) -> str:
 
 
 def _setup_logging_for_live() -> None:
-    """Silence all uvicorn loggers so they don't corrupt the Rich Live region."""
-    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.asgi", "uvicorn.config"):
+    """Silence every logger that could write to stdout/stderr while Rich Live is active.
+
+    FastMCP's ``configure_logging`` calls ``logging.basicConfig`` with a RichHandler
+    on Console(stderr=True) the first time the MCP server is created, which corrupts
+    our Live region. Chronos's own sync workers also emit INFO logs that would
+    bleed through. This function is idempotent — call it AFTER MCP server creation
+    to win the race against FastMCP's handler install.
+    """
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    root.setLevel(logging.CRITICAL)
+
+    silenced = (
+        "uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.asgi", "uvicorn.config",
+        "chronos", "chronos.sync", "chronos.sync.engine", "chronos.sync.gmail",
+        "chronos.sync.gcal", "chronos.api", "chronos.mcp", "chronos.db",
+        "FastMCP", "mcp", "mcp.server", "mcp.server.fastmcp",
+        "httpx", "httpcore", "googleapiclient",
+    )
+    for name in silenced:
         log = logging.getLogger(name)
         log.setLevel(logging.CRITICAL)
+        log.handlers.clear()
         log.propagate = False
 
 
@@ -542,7 +562,9 @@ async def _run_daemon(db_path: str | None, http_port: int, mcp_port: int) -> Non
     # Create sync engine
     sync_engine = SyncEngine(db_path)
 
-    # Silence uvicorn loggers before they emit anything to stdout
+    # Silence loggers AFTER MCP server creation — FastMCP installs a RichHandler
+    # via logging.basicConfig the first time create_mcp_server() runs, so we must
+    # call this AFTER mcp_app is built to win the race.
     _setup_logging_for_live()
 
     # stop_event used by _live_progress to exit on orderly shutdown
