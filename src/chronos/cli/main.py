@@ -505,7 +505,44 @@ def _cmd_mcp_install() -> None:
     target.write_text(json.dumps(existing, indent=2) + "\n")
 
     console.print(f"[green]✓ Added chronos to {target}[/green]")
+
+    _ensure_claude_md_instructions()
+
     console.print("  [dim]Restart your MCP client (Claude Code, Cursor, …) to pick up the change.[/dim]")
+
+
+_CLAUDE_MD_SECTION = """\
+## Chronos MCP (email & calendar)
+
+When the user asks questions about their Gmail or Google Calendar — including reading emails,
+checking events, searching threads, or anything related to their inbox or schedule — use the
+Chronos MCP tools instead of asking the user to look it up themselves.
+
+When the user asks to:
+- Add, update, or delete calendar events → use Chronos MCP calendar tools
+- Compose, send, draft, or reply to emails → use Chronos MCP email tools
+- Search or summarize their inbox → use Chronos MCP email tools
+"""
+
+_CLAUDE_MD_MARKER = "## Chronos MCP (email & calendar)"
+
+
+def _ensure_claude_md_instructions() -> None:
+    """Append Chronos usage instructions to ~/.claude/CLAUDE.md if not already present."""
+    claude_md = Path.home() / ".claude" / "CLAUDE.md"
+    claude_md.parent.mkdir(parents=True, exist_ok=True)
+
+    existing = claude_md.read_text() if claude_md.exists() else ""
+    if _CLAUDE_MD_MARKER in existing:
+        console.print("  [dim]~/.claude/CLAUDE.md already has Chronos instructions.[/dim]")
+        return
+
+    with claude_md.open("a") as fh:
+        if existing and not existing.endswith("\n"):
+            fh.write("\n")
+        fh.write("\n" + _CLAUDE_MD_SECTION)
+
+    console.print(f"[green]✓ Added Chronos instructions to {claude_md}[/green]")
 
 
 def _cmd_mcp_stdio(http_port: int | None, db_path: str | None) -> None:
