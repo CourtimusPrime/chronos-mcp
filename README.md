@@ -35,17 +35,29 @@ pip install -e .
 
 ### Prerequisites
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Create a project and enable **Gmail API** and **Google Calendar API**
-3. Create an OAuth client ID (Desktop app type)
-4. Download the credentials JSON file
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a project
+2. Enable **Gmail API** and **Google Calendar API**
+3. **OAuth consent screen** → External:
+   - Add yourself as a **Test User** and keep the app in **Testing** mode
+     (Production requires CASA verification for the Gmail scope)
+   - Under "Add or remove scopes" → filter `restricted` → tick `https://mail.google.com/`
+   - Also add `https://www.googleapis.com/auth/calendar`
+4. **Credentials → Create Credentials → OAuth client ID**:
+   - Application type: **Web application**
+   - Authorized redirect URI: `http://localhost:9004/callback`
+     (override via `oauth.callback_port` in `config.yml` if needed)
+5. Download the credentials JSON file
+
+> Desktop App credentials (`"installed"` JSON shape) are **not supported** —
+> Chronos uses the `https://mail.google.com/` restricted scope, which is only
+> practical on a Web Application OAuth client in Testing mode.
 
 ### Register an account
 
 > Run `chronos --help` for full Google Cloud Console setup instructions.
 
 ```bash
-# Step 1: Stage your credentials (Desktop app OAuth JSON from Google Cloud Console)
+# Step 1: Stage your credentials (Web Application OAuth JSON from Google Cloud Console)
 chronos --use /path/to/credentials.json
 
 # Step 2: Register an account (opens browser for OAuth2 consent)
@@ -104,6 +116,21 @@ chronos --sync [ALIAS] [--type full|incremental]  # Trigger sync
 | `CHRONOS_HTTP_PORT` | `7070`                     | HTTP API port                      |
 | `CHRONOS_MCP_PORT`  | `7071`                     | MCP server port                    |
 | `CHRONOS_LOG_LEVEL` | `INFO`                     | Log level                          |
+
+## Configuration
+
+`config.yml` (searched in `$CHRONOS_CONFIG`, `./config.yml`, then `~/.chronos/config.yml`)
+exposes additional settings. The OAuth callback is one of them:
+
+```yaml
+settings:
+  oauth:
+    callback_port: 9004     # local server bind during `chronos --add`
+    callback_path: /callback # appended to the redirect URI
+```
+
+If you change `callback_port`, update the **Authorized redirect URI** in your
+Web Application OAuth client to match.
 
 ## License
 
