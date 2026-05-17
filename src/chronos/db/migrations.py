@@ -73,6 +73,26 @@ def _backfill_body_text(conn: sqlite3.Connection) -> None:
         logger.info("Cleaned body_text for %d messages.", len(updates))
 
 
+def _migrate_fts_add_attachment_names(conn: sqlite3.Connection) -> None:
+    """Rebuild messages_fts virtual table to include attachment_names column."""
+    try:
+        conn.execute("SELECT attachment_names FROM messages_fts LIMIT 1")
+        return  # column already present
+    except sqlite3.OperationalError:
+        pass
+
+    from chronos.db.schema import MESSAGES_FTS_DDL, MESSAGES_FTS_TRIGGERS
+    conn.execute("DROP TRIGGER IF EXISTS messages_fts_insert")
+    conn.execute("DROP TRIGGER IF EXISTS messages_fts_delete")
+    conn.execute("DROP TRIGGER IF EXISTS messages_fts_update")
+    conn.execute("DROP TABLE IF EXISTS messages_fts")
+    conn.execute(MESSAGES_FTS_DDL)
+    for trigger in MESSAGES_FTS_TRIGGERS:
+        conn.execute(trigger)
+    conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
+    logger.info("Migration: rebuilt messages_fts with attachment_names column.")
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     """Apply all DDL statements to initialize or upgrade the database schema."""
     try:
@@ -83,6 +103,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
         _migrate_add_from_name(conn)
         _migrate_add_web_url(conn)
         _backfill_body_text(conn)
+        _migrate_fts_add_attachment_names(conn)
         conn.commit()
         logger.debug("Schema migrations applied successfully.")
     except sqlite3.Error as e:

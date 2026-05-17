@@ -151,6 +151,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
   body_text,
   from_address,
   labels,
+  attachment_names,
   content='messages',
   content_rowid='rowid',
   tokenize='unicode61 remove_diacritics 2'
@@ -161,24 +162,24 @@ MESSAGES_FTS_TRIGGERS = [
     """
     CREATE TRIGGER IF NOT EXISTS messages_fts_insert
       AFTER INSERT ON messages BEGIN
-        INSERT INTO messages_fts(rowid, subject, body_text, from_address, labels)
-        VALUES (new.rowid, new.subject, new.body_text, new.from_address, new.labels);
+        INSERT INTO messages_fts(rowid, subject, body_text, from_address, labels, attachment_names)
+        VALUES (new.rowid, new.subject, new.body_text, new.from_address, new.labels, new.attachment_names);
       END;
     """,
     """
     CREATE TRIGGER IF NOT EXISTS messages_fts_delete
       AFTER DELETE ON messages BEGIN
-        INSERT INTO messages_fts(messages_fts, rowid, subject, body_text, from_address, labels)
-        VALUES ('delete', old.rowid, old.subject, old.body_text, old.from_address, old.labels);
+        INSERT INTO messages_fts(messages_fts, rowid, subject, body_text, from_address, labels, attachment_names)
+        VALUES ('delete', old.rowid, old.subject, old.body_text, old.from_address, old.labels, old.attachment_names);
       END;
     """,
     """
     CREATE TRIGGER IF NOT EXISTS messages_fts_update
       AFTER UPDATE ON messages BEGIN
-        INSERT INTO messages_fts(messages_fts, rowid, subject, body_text, from_address, labels)
-        VALUES ('delete', old.rowid, old.subject, old.body_text, old.from_address, old.labels);
-        INSERT INTO messages_fts(rowid, subject, body_text, from_address, labels)
-        VALUES (new.rowid, new.subject, new.body_text, new.from_address, new.labels);
+        INSERT INTO messages_fts(messages_fts, rowid, subject, body_text, from_address, labels, attachment_names)
+        VALUES ('delete', old.rowid, old.subject, old.body_text, old.from_address, old.labels, old.attachment_names);
+        INSERT INTO messages_fts(rowid, subject, body_text, from_address, labels, attachment_names)
+        VALUES (new.rowid, new.subject, new.body_text, new.from_address, new.labels, new.attachment_names);
       END;
     """,
 ]

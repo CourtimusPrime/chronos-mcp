@@ -73,6 +73,8 @@ def _build_mcp(http_port: int = 7070) -> FastMCP:
         To read the full body of a specific message, call get_message(id) afterward.
         Keep limit small (10-20) when you only need to identify messages; use larger
         limits only when you need to scan many results.
+        Results are ranked by relevance when q is provided.
+        To search only sent mail, add label="SENT". For received mail, use label="INBOX".
 
         Args:
             q: Full-text search query. Searches subject, body, and from_address.

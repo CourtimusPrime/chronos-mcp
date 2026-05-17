@@ -67,15 +67,21 @@ def list_messages(
     offset: int = Query(default=0, ge=0),
 ):
     """GET /v1/messages — List messages with optional filters."""
-    conditions = []
-    params = []
+    fts_join = ""
+    fts_params: list = []
+    order_by = "m.date_unix DESC"
 
     if q:
-        # FTS5 search
-        conditions.append(
-            "m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)"
+        # FTS5 search — join to get rank for relevance ordering
+        fts_join = (
+            "INNER JOIN (SELECT rowid, rank FROM messages_fts WHERE messages_fts MATCH ?) fts"
+            " ON m.rowid = fts.rowid"
         )
-        params.append(q)
+        fts_params = [q]
+        order_by = "fts.rank"
+
+    conditions = []
+    params: list = []
 
     if account_id:
         conditions.append("m.account_id = ?")
@@ -109,13 +115,14 @@ def list_messages(
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     count_row = conn.execute(
-        f"SELECT COUNT(*) FROM messages m {where_clause}", params
+        f"SELECT COUNT(*) FROM messages m {fts_join} {where_clause}",
+        fts_params + params,
     ).fetchone()
     total = count_row[0]
 
     rows = conn.execute(
-        f"SELECT m.* FROM messages m {where_clause} ORDER BY m.date_unix DESC LIMIT ? OFFSET ?",
-        params + [limit, offset],
+        f"SELECT m.* FROM messages m {fts_join} {where_clause} ORDER BY {order_by} LIMIT ? OFFSET ?",
+        fts_params + params + [limit, offset],
     ).fetchall()
 
     items = [_message_to_dict(r) for r in rows]

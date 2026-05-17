@@ -225,7 +225,7 @@ wheels = [
 
 [[package]]
 name = "chronos-mcp"
-version = "0.1.5"
+version = "0.1.13"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
