@@ -27,10 +27,10 @@ _SUBTITLE = "[dim]Ctrl+C wipes data  ·  [bold]chronos --stop[/bold] for clean s
 
 def _state_cell(state: str | None, tick: int) -> str:
     if state in ("running", "syncing", "full_sync", "incremental_sync"):
-        return f"[cyan]{_BRAILLE[tick % len(_BRAILLE)]}[/cyan] sync"
+        return f"[cyan]{_BRAILLE[tick % len(_BRAILLE)]}[/cyan] syncing"
     if state == "error":
         return "[red]✗[/red] error"
-    return "[green]✓[/green] idle"
+    return "[green]✓[/green] done"
 
 
 def _setup_logging_for_live() -> None:
